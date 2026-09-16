@@ -10,8 +10,8 @@
 | 调用 | `dsh --profile headless "<任务>"`,退出码 0/1,stdout=最终答复文本 |
 | 冒烟 | 两次实测(31s/一次即时):输出"好"/"PASS",无工具调用 ✅ |
 | 会话续接 | ❌ 无。官方 Known Limitations 明示 one-shot;`--resume` 仅属 tui profile。headless 不输出 session_id → `parse` 恒得 session=None |
-| 凭据 | `C:\Users\a2018\.dsh\.credentials.yaml` 存在,无需 .env ✅ |
-| profile | `C:\Users\a2018\.dsh\profiles\headless` 已初始化 ✅ |
+| 凭据 | `%USERPROFILE%\.dsh\.credentials.yaml` 存在,无需 .env ✅ |
+| profile | `%USERPROFILE%\.dsh\profiles\headless` 已初始化 ✅ |
 
 **坑与解法(实测发现)**: 本机 PATH 无 `dsh`;`pnpm dsh` 只能在 checkout 目录跑,而 **agent 的 workspace=进程启动目录**——直接 `pnpm dsh` 会把 DSH 源码目录变成 agent 工作区(危险)。从其他目录用 node+tsx 直调 `apps/cli/src/bin.ts` 会因 tsconfig paths 不锚定而报 `@deepseek-ai/cordis` 导出错误。
 ✅ 解法(已实测): `node <tsx>/dist/cli.mjs --tsconfig <checkout>/tsconfig.json <checkout>/apps/cli/src/bin.ts --profile headless "<任务>"` —— 保持调用方 cwd 作为 workspace。
