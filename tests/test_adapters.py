@@ -56,12 +56,14 @@ class TestCodebuddy(unittest.TestCase):
         sid, out = ad.parse("纯文本输出")
         self.assertEqual((sid, out), (None, "纯文本输出"))
 
-    def test_model_only_with_flag(self):
+    def test_model_default_flag(self):
+        # 本机 help 实测: --model 存在,默认即传(可 model_flag 覆盖)
         ad = CodebuddyAdapter()
-        argv = ad.build({"name": "j", "model": "m1"}, {}, "P", None)
-        self.assertNotIn("--model", argv)
-        argv2 = ad.build({"name": "j", "model": "m1"}, {"model_flag": "--model"}, "P", None)
-        self.assertIn("--model", argv2)
+        argv = ad.build({"name": "j", "model": "glm-5.1"}, {}, "P", None)
+        self.assertEqual(argv[argv.index("--model") + 1], "glm-5.1")
+        argv2 = ad.build({"name": "j", "model": "m1"}, {"model_flag": "-m"}, "P", None)
+        self.assertIn("-m", argv2)
+        self.assertNotIn("--model", argv2)
 
 
 class TestCustom(unittest.TestCase):
@@ -94,12 +96,43 @@ class TestCustom(unittest.TestCase):
         self.assertIn("--yes", argv)
 
 
-class TestZcodeBuiltin(unittest.TestCase):
-    def test_not_capable(self):
+class TestZcode(unittest.TestCase):
+    """flag 依据本机 zcode.cjs --help 实测(plans/003)。"""
+
+    def test_argv_safe_default(self):
         ad = resolve("zcode", {})
-        self.assertFalse(ad.capable)
-        with self.assertRaises(RuntimeError):
-            ad.build({"name": "j"}, {}, "P", None)
+        argv = ad.build({"name": "j"}, {}, "P", None)
+        self.assertEqual(argv, ["zcode", "--prompt", "P", "--json", "--mode", "plan"])
+
+    def test_allow_danger_maps_yolo(self):
+        ad = resolve("zcode", {})
+        argv = ad.build({"name": "j", "allow_danger": True}, {}, "P", None)
+        self.assertEqual(argv[argv.index("--mode") + 1], "yolo")
+
+    def test_resume(self):
+        ad = resolve("zcode", {})
+        argv = ad.build({"name": "j"}, {}, "P", "sess-abc")
+        self.assertEqual(argv[argv.index("--resume") + 1], "sess-abc")
+
+    def test_parse_json(self):
+        ad = resolve("zcode", {})
+        sid, out = ad.parse('{"result":"好","session_id":"sess-9"}')
+        self.assertEqual((sid, out), ("sess-9", "好"))
+
+    def test_parse_last_json_line(self):
+        ad = resolve("zcode", {})
+        sid, out = ad.parse('noise\n{"text":"T","session":"s2"}\n')
+        self.assertEqual((sid, out), ("s2", "T"))
+
+    def test_parse_plain_fallback(self):
+        ad = resolve("zcode", {})
+        self.assertEqual(ad.parse("纯文本"), (None, "纯文本"))
+
+    def test_node_bundle_command_override(self):
+        acfg = {"command": ["node", "C:\\ZCode\\resources\\glm\\zcode.cjs"]}
+        ad = resolve("zcode", {"zcode": acfg})
+        argv = ad.build({"name": "j"}, acfg, "P", None)
+        self.assertEqual(argv[:3], ["node", "C:\\ZCode\\resources\\glm\\zcode.cjs", "--prompt"])
 
 
 class TestUnknown(unittest.TestCase):

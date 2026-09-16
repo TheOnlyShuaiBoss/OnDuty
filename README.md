@@ -1,90 +1,99 @@
 # onduty
 
-**Send your coding agents on shift — go live your life.**
+**让 agent 替你值班——你去生活。**
 
-A tiny local daemon that runs CLI coding agents (DSH, CodeBuddy/WorkBuddy, or *anything* with a non-interactive command) on a **cron schedule** or as a **relay chain**: when one task finishes, the next instruction — optionally carrying the previous run's output — is fed in automatically. No human babysitting required.
+一个本地小守护进程，驱动 CLI 编码 agent（DSH、WorkBuddy/CodeBuddy、ZCode，或**任何**有非交互调用能力的命令行）按 **cron 定时**或**接力链**执行任务：前一个任务一跑完，下一条指令（可携带上一段的产出）自动接上，不需要人守着。
 
-简体中文 README 见 [README.zh.md](README.zh.md) · 完整手册见 [docs/MANUAL.en.md](docs/MANUAL.en.md)（[中文](docs/MANUAL.md)）
+English README: [README.en.md](README.en.md) · 完整操作手册：[docs/MANUAL.md](docs/MANUAL.md)（[EN](docs/MANUAL.en.md)）
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Python](https://img.shields.io/badge/python-≥3.10-green.svg)](https://python.org) [![Status](https://img.shields.io/badge/status-alpha-orange.svg)]()
 
-## Why
+## 为什么
 
-Agents today stop after each task and wait for you to type the next message. Phone-ping integrations still need a human to tap "continue". onduty treats "the next message" as **configuration**:
+现在的 agent 跑完一个任务就停下等你发话；"手机推送"类方案仍然要你点一下"继续"。onduty 把"下一条消息"变成**配置**：
 
-- ⏰ **Scheduled** — `cron: "0 8 * * *"`, fire daily reviews/tests/lint at will
-- 🔗 **Relay chains** — `schedule: { after: job_x }` hands the baton automatically; inject the previous result via `{{prev.output}}`, or resume the same session with `mode: continue`
-- 🧰 **Multi-agent** — per-agent adapters (~40 lines each); any other CLI plugs in via a `{prompt}`/`{session}` argv template, zero code
-- 🔒 **Safe by default** — unattended runs must live inside an explicit `allow_roots` whitelist; permission-bypass flags require a per-job `allow_danger` double-condition
-- 📣 **Notifications** — structured logs, native Windows toasts (zero deps), and webhooks (ServerChan / Telegram / WeCom) so your phone knows when the shift ends
+- ⏰ **定时**：`cron: "0 8 * * *"`，晨报/测试/巡检到点自动跑
+- 🔗 **接力**：`after: <job>` 自动交棒；`{{prev.output}}` 注入上一段产出，或 `mode: continue` 续接同一会话
+- 🧰 **多 agent**：每家一个约 50 行的适配器，能力全部**本机实测**（见 plans/001、003）；其他 CLI 用 `{prompt}/{session}` 命令模板免代码接入
+- 🔒 **安全默认**：无人值守任务必须落在 `allow_roots` 白名单目录内；放权旗标需逐任务 `allow_danger: true` 双条件；退出码 0 但无输出会被判失败（防"假成功"接力）
+- 📣 **通知**：结构化日志 + Windows 原生 toast（零依赖）+ webhook（Server酱 / Telegram / 企业微信），下班不用回头看屏幕
 
-## Quick start
+## 快速上手
 
-```bash
-pip install -e .          # or: python -m onduty ...
-cp tasks.example.yaml tasks.yaml   # edit allow_roots + your first job
-onduty check              # validate config, preview the exact argv per job
-onduty once fix_tests     # foreground test run, including after-chains
-onduty daemon             # go on shift
+```powershell
+pip install -e .                    # 或 python -m onduty 免安装
+copy tasks.example.yaml tasks.yaml  # 编辑 allow_roots 与第一个 job
+onduty check                        # 校验 + 预览每个 job 拼好的命令行
+onduty once fix_tests               # 前台试跑(含 after 接力链)
+onduty daemon                       # 开始值班
+onduty list / status / run <job> / logs <job>
 ```
 
 ```yaml
 safety:
-  allow_roots: [sandbox]           # mandatory isolation for unattended runs
+  allow_roots: [sandbox]            # 无人值守强制隔离
 
 jobs:
   - name: fix_tests
     agent: codebuddy
     workdir: sandbox/proj
-    prompt: Run the tests, write failures to report.md
-    allow_danger: true
+    prompt: 运行测试,失败项写入 report.md
+    allow_danger: true              # 无头放权(codebuddy→ -y)
 
-  - name: followup                 # fires automatically when fix_tests succeeds
+  - name: followup                  # fix_tests 成功后自动接力
     agent: codebuddy
-    mode: continue                 # same session, agent remembers everything
+    mode: continue                  # 续接同一会话,agent 记得全部上下文
     workdir: sandbox/proj
     prompt: |
-      Previous result: {{prev.output}}
-      Fix the first failure.
+      上一段结论: {{prev.output}}
+      修复第一个失败项。
     schedule: { after: fix_tests, on: success }
+
+  - name: daily_review
+    agent: zcode
+    workdir: sandbox/daily
+    prompt: 汇总昨天的改动,输出 CHANGELOG 草案
+    schedule: { cron: "0 8 * * *" }
 ```
 
-## Agent support (v0.1)
+## 支持 agent（v0.1，flag 均本机实测）
 
-| Agent | Headless run | Session resume | Status |
+| agent | 无头调用 | 会话续接 | 一次性准备 |
 |---|---|---|---|
-| DSH (`dsh --profile headless`) | ✅ live-tested | ✗ upstream limit → use `{{prev.output}}` | built-in |
-| CodeBuddy / WorkBuddy (`codebuddy -p --resume`) | ✅ official headless docs | ✅ `--resume <id>` | built-in |
-| Any CLI with a non-interactive mode | ✅ | ✅ if it has one | `custom` adapter |
-| zcode (TUI-only today) | ✗ evidence | — | use `custom` once verified |
-| claude code / codex / opencode | ✅ | ✅ | planned v0.3 |
+| **DSH** | ✅ `--profile headless` 实测 | ❌ 官方限制 → `{{prev.output}}` 传话 | 无 |
+| **CodeBuddy / WorkBuddy**（客户端内嵌 CLI 或 npm 版） | ✅ `-p --output-format json` 实测 | ✅ `--resume <id>` 实测存在 | CLI 内 `/login` 一次（浏览器 OAuth） |
+| **ZCode**（客户端内嵌运行时或 npm 版） | ✅ `--prompt --json` 实测 | ✅ `--resume sess_xxx` | `login` 过一次验证码/OAuth；桌面 provider 可用 `scripts/sync-zcode-cli-config.ps1` 生成 CLI 配置 |
+| 任意非交互 CLI | ✅ | 按其能力 | `agents.<名>: {type: custom, command: [...{prompt}...]}` |
+| claude code / codex / opencode | ✅（文档核实） | ✅ | v0.3 内置化 |
 
-## How it works
+## 与同类的区别
+
+"定时跑某个 agent"的轮子已有不少（claudequeue / agent-minder / claudecron / OpenClaw cron）。没有的是这个组合：**多 agent 适配层 + 会话续接接力链 + 声明式 YAML + 强制沙箱隔离**，一个轻量本地守护进程全带上。
+
+## 工作原理
 
 ```
-tasks.yaml ──► onduty daemon ──► scheduler (tick: cron due / queued run markers / chains)
+tasks.yaml ──► onduty daemon ──► 调度对账(cron 到期 / 手动排队 / after 接力)
                     │
-                    ├─► adapter.build(argv) ─► subprocess(workdir, timeout) ─► adapter.parse
-                    ├─► state: state.json · runs.jsonl · logs/<job>/<ts>.log
-                    └─► notify: log · WinRT toast · webhook
+                    ├─► adapter.build(argv) ─► 子进程(workdir 隔离 + 超时杀进程树) ─► adapter.parse(取 session/产出)
+                    ├─► state.json · runs.jsonl · 每 run 完整日志
+                    └─► 通知: log · WinRT toast · webhook
 ```
 
-Single process, serial execution, everything on disk — restart-safe with optional cron catch-up.
+单进程、串行执行、状态全落盘——重启不丢，错过的定时可按 `catchup` 补跑一次。
 
-## How is this different?
-
-Cron/queue wrappers for a single agent exist (claudequeue, agent-minder, claudecron, OpenClaw cron…). What's not out there: **multi-agent adapters + session-resume relay chains + declarative YAML + enforced sandbox isolation** in one lean local daemon.
-
-## Repository layout
+## 仓库结构
 
 ```
-onduty/            # the daemon package (config/state/scheduler/runner/notify/adapters)
-docs/MANUAL.*.md   # full operations manual (zh/en)
-plans/             # design docs: 000 master plan · 001 adapter spike evidence · 002 naming
-tasks.example.yaml # annotated reference config
-tests/             # 52 unit tests, stdlib unittest
+onduty/            # daemon 包(config/state/scheduler/runner/notify/adapters/cli)
+docs/MANUAL.md     # 中文操作手册(字段总表/FAQ/排障) · MANUAL.en.md 英文版
+plans/             # 设计文档:000 主方案 · 001/003 适配实测 · 002 命名
+scripts/           # 辅助脚本(zcode CLI 配置生成等,零密钥)
+tasks.example.yaml # 带注释的参考配置
+tests/             # 59 个标准库单测
+Rules.md           # 项目工作规则
 ```
 
-## License
+## 许可
 
 [MIT](LICENSE)

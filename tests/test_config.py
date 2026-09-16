@@ -92,9 +92,13 @@ class TestConfig(unittest.TestCase):
         with self.assertRaises(config.ConfigError):
             self.load(BASE_JOB + "    notify: [carrier-pigeon]\n")
 
-    def test_zcode_not_capable_rejected(self):
+    def test_unknown_agent_rejected(self):
         with self.assertRaises(config.ConfigError):
-            self.load(BASE_JOB.replace("agent: dsh", "agent: zcode"))
+            self.load(BASE_JOB.replace("agent: dsh", "agent: totally-not-real"))
+
+    def test_zcode_continue_now_valid(self):
+        cfg = self.load(BASE_JOB.replace("agent: dsh", "agent: zcode") + "    mode: continue\n")
+        self.assertEqual(cfg["jobs"][0]["mode"], "continue")
 
     def test_custom_agent_ok(self):
         cfg = config.load_config(write_tasks(self.tmp, """

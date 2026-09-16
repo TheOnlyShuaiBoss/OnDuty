@@ -74,6 +74,8 @@ def run_job(cfg: dict, state, job: dict, trigger: str = "manual", prev_output: s
 
     env = dict(os.environ)
     env.update(adapter.env(job, agent_cfg))
+    # 任意 agent 可在 tasks.yaml agents.<name>.env 追加环境变量(认证材料等由用户自带)
+    env.update({str(k): str(v) for k, v in (agent_cfg.get("env") or {}).items()})
     os.makedirs(job["workdir"], exist_ok=True)
 
     timed_out = False
@@ -116,6 +118,10 @@ def run_job(cfg: dict, state, job: dict, trigger: str = "manual", prev_output: s
     status = "success" if rc == 0 and not timed_out else ("timeout" if timed_out else "failed")
     if rc is None and not timed_out:
         status = "error"
+    if status == "success" and not output.strip():
+        # 部分 CLI 认证失败仍退出 0(codebuddy 实测) → 空产出判 failed,防接力链误判
+        status = "failed"
+        err = (err + "\n[onduty] 退出码 0 但无任何输出,判定 failed(常见原因:未登录/认证过期)").strip()
     if sid:
         state.update_job(job["name"], session_id=sid)
     return _finish(cfg, state, job, trigger, status, rc, output, t0, log_path, started)

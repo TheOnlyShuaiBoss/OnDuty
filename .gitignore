@@ -7,3 +7,6 @@ tasks.yaml
 build/
 dist/
 *.egg-info/
+
+# 本地规则指针(仓库以 Rules.md 为准)
+CLAUDE.md

@@ -76,11 +76,11 @@ DSH has **no** headless resume (upstream limitation) — use `new` + text inject
 | agent | headless | resume | notes |
 |---|---|---|---|
 | `dsh` | `dsh --profile headless "<task>"` | ✗ | stdout = final answer; no session id printed |
-| `codebuddy` / `workbuddy` | `-p "…" --output-format json` | `--resume <id>` | Tencent CodeBuddy CLI (npm `@tencent-ai/codebuddy-code`); flags per official headless docs |
-| `zcode` | ✗ (TUI-only, no public evidence) | ✗ | plug it in via `custom` once you verify a non-interactive command |
+| `codebuddy` / `workbuddy` | `-p "…" --output-format json` | `-r/--resume <id>` | Tencent CodeBuddy CLI — npm `@tencent-ai/codebuddy-code` **or the CLI bundled inside the WorkBuddy desktop client** (`resources\app.asar.unpacked\cli\bin\codebuddy`). `--model` / `--session-id` / `-w worktree` live-verified. One-time: run it once interactively and `/login` (browser OAuth). Beware: unauthenticated runs print an error but **exit 0** — onduty fails empty output by design |
+| `zcode` | `--prompt "…" --json` | `--resume sess_…` | Official ZCode runtime (`resources\glm\zcode.cjs`) bundled in the desktop client, or npm. Needs `~\.zcode\cli\config.json` once — generate it from your desktop provider with `scripts/sync-zcode-cli-config.ps1` (**UTF-8 without BOM** required) and finish `zcode login` once. Permission mapping: `allow_danger: false` → `--mode plan` (read-only; the runtime's own default is `yolo`), `true` → `--mode yolo` |
 | `custom` | your argv template | via `{session}` | see below |
 
-Per-agent overrides under `agents.<name>:` — `command` (string or argv list), `extra_args`, `print_flag/format_flag/resume_flag/allow_flag`, `output_format`, `model_flag` (must be set before `model:` is allowed), `session_keys`, `output_key`, `allow_args`, `env`.
+Per-agent overrides under `agents.<name>:` — `command` (string or argv list), `extra_args`, `env`, codebuddy: `print_flag/format_flag/resume_flag/allow_flag/output_format/model_flag(default --model)/sandbox_env`; zcode: `prompt_flag/json/mode/safe_mode`; dsh: `profile`.
 
 Custom example:
 

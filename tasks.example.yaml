@@ -1,6 +1,6 @@
 # onduty 任务配置示例(复制为 tasks.yaml 后修改)
 # 调度四选一: cron(定时) / once_at(v0.2) / after(前任务完成接力) / 不写 schedule 即手动
-# 适配器 flag 依据与实测结论见 plans/001_adapter_spike.md
+# 适配器 flag 依据与实测结论见 plans/001_adapter_spike.md 与 plans/003_local_clients_probe.md
 
 defaults:
   timeout_minutes: 30        # 单任务超时,强杀记失败(主方案 §8)
@@ -18,28 +18,34 @@ notify:
 safety:
   allow_roots:               # 强制隔离: 所有 job 的 workdir 必须落在其中之一(相对路径按本文件目录解析)
     - sandbox
-    # - D:\ClaudeData\agent_daemon\sandbox
+    # - "<盘符>:\\专用\\沙箱\\根目录>"   # 绝对路径亦可;人肉开发目录不要放进来
 
 agents:
   dsh:
     # 情形A: dsh 已全局安装 → 删掉 command,默认就是 ["dsh"]
     # 情形B: 从源码 checkout 跑(本机实证方式)。务必用 node 直调 argv 列表,
-    #        不要用 .cmd 批处理包装——cmd 的 GBK 码页会破坏含中文/引号的 prompt(verlog 2026-09-16)
+    #        不要用 .cmd 批处理包装——cmd 的 GBK 码页会破坏含中文/引号的 prompt(plans/001)
     command:
-      - "D:\\Program Files\\nodejs\\node.exe"
-      - "D:\\DSH\\deepseek-harness\\node_modules\\tsx\\dist\\cli.mjs"
+      - "<node.exe 路径>"                      # 例: C:\Program Files\nodejs\node.exe
+      - "<DSH源码目录>\\node_modules\\tsx\\dist\\cli.mjs"
       - "--tsconfig"
-      - "D:\\DSH\\deepseek-harness\\tsconfig.json"
-      - "D:\\DSH\\deepseek-harness\\apps\\cli\\src\\bin.ts"
-  workbuddy:                  # = codebuddy CLI(@tencent-ai/codebuddy-code),官方无头文档 plans/001 §2
-    # command: codebuddy      # 默认即可;若品牌安装命令不同再覆盖
-    # model_flag: "--model"   # 文档未证实,自行确认后打开才能给 job 配 model
-  myagent:                    # custom 示例: 任何"命令行非交互"agent 免代码接入(含 zcode 实测后的转正)
+      - "<DSH源码目录>\\tsconfig.json"
+      - "<DSH源码目录>\\apps\\cli\\src\\bin.ts"
+  codebuddy:                  # = WorkBuddy CLI。两种安装: npm @tencent-ai/codebuddy-code,
+    # 或 WorkBuddy 桌面客户端内嵌 CLI(实测 plans/003):
+    # command: ["<node.exe 路径>", "<WorkBuddy安装目录>\\resources\\app.asar.unpacked\\cli\\bin\\codebuddy"]
+    # 一次性: 用上面命令直接运行进入 TUI,输入 /login 浏览器登录后 headless 可用
+    # -p/--output-format json/--resume/-y/--model 均已本机实测
+  zcode:                      # ZCode 客户端内嵌运行时或 npm 版(实测 plans/003):
+    # command: ["<node.exe 路径>", "<ZCode安装目录>\\resources\\glm\\zcode.cjs"]
+    # 前置: %USERPROFILE%\.zcode\cli\config.json 存在(可用 scripts/sync-zcode-cli-config.ps1
+    #       从桌面配置生成)且已完成一次 login;allow_danger=false 自动用只读 --mode plan
+  myagent:                    # custom 示例: 任何"命令行非交互"agent 免代码接入
     type: custom
     command: ["myagent", "--print", "{prompt}", "--resume", "{session}"]
     # session_keys: [session_id]  # stdout 为 JSON 时的会话 id 键
     # allow_args: ["--yes"]       # job.allow_danger 时追加
-    # env: {MY_TOKEN: "..."}
+    # env: {MY_TOKEN: "..."}      # 任意 agent 都支持 env 追加(认证材料等放这里,勿入库)
 
 jobs:
   # 定时: 每天 08:00 用 DSH 新开对话做汇总(DSH 无 resume,只能 new)

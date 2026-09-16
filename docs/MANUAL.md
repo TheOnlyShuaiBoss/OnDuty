@@ -164,19 +164,21 @@ schedule: { cron: "*/30 9-18 * * 1-5" } # 工作日 9-18 点每 30 分
 | agent 名 | 命令 | 非交互 | continue | 说明 |
 |---|---|---|---|---|
 | `dsh` | `dsh --profile headless "<任务>"` | ✅ | ❌ | DeepSeek Harness。无头一次性调用；session 不落 stdout。**没装全局 dsh 时看下方 command 配置** |
-| `codebuddy` / `workbuddy` | `codebuddy -p "<任务>" --output-format json [-r <sid>]` | ✅ | ✅ | 腾讯 CodeBuddy/WorkBuddy CLI（npm `@tencent-ai/codebuddy-code`）。flag 出自官方无头文档；本机装好后建议先 `onduty once` 冒烟 |
-| `zcode` | — | ❌ | ❌ | zcode-app-cli 仅 TUI（无公开无头证据），v0.1 内置拒绝接入，**用 custom 接入你实测到的命令** |
+| `codebuddy` / `workbuddy` | `codebuddy -p "<任务>" --output-format json [-r <sid>]` | ✅ | ✅（`-r/--resume`，另有 `-c` 继续最近会话） | 两种来源：npm `@tencent-ai/codebuddy-code`，或 **WorkBuddy 桌面客户端内嵌 CLI**（`resources\app.asar.unpacked\cli\bin\codebuddy`，本机实测 plans/003）。`--model`/`--session-id`/`-w worktree` 亦实测存在。**一次性准备**：首次用需在 TUI 里 `/login`（浏览器 OAuth）。⚠️ 未登录时报错却**退出码 0**——onduty 已加"空产出判失败"防线兜底 |
+| `zcode` | `--prompt "<任务>" --json --resume <sess_id>` | ✅ | ✅（`--resume sess_xxx`） | ZCode 桌面客户端内嵌官方运行时（`resources\glm\zcode.cjs`）或 npm 版；flag 本机实测 plans/003。**一次性准备**：`%USERPROFILE%\.zcode\cli\config.json` 就绪（可用 `scripts/sync-zcode-cli-config.ps1` 从桌面配置生成）且 `login` 通过。默认只读：`allow_danger=false` 自动加 `--mode plan`，true 才给 `--mode yolo`（该 CLI 的 `--prompt` 裸跑默认 yolo，我们显式接管） |
 
 ### 配置项（`agents.<name>:`，全部可省）
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `command` | `["dsh"]` / `["codebuddy"]` | 可写字符串或 argv 列表（列表可包含 node 直调参数，见下） |
+| `command` | `["dsh"]` / `["codebuddy"]` / `["zcode"]` | 可写字符串或 argv 列表（列表可包含 node 直调参数，见下） |
 | `extra_args` | `[]` | 追加在任务参数**之前**的固定参数 |
+| `env` | `{}` | 任意 agent 通用:追加环境变量(认证 token 等放这里;文件别入库) |
 | `print_flag` / `format_flag` / `resume_flag` / `allow_flag` | `-p` / `--output-format` / `--resume` / `-y` | codebuddy 专用，flag 有出入时覆盖 |
 | `output_format` | `json` | codebuddy：`json` 从结果解析 session_id 与最终文本；`text` 原文透传 |
+| `model_flag` | codebuddy=`--model`（实测）/ 其余无 | 配置后 job 才能用 `model:` |
 | `sandbox_env` | `true` | codebuddy：allow_danger 时附带 `CODEBUDDY_IS_SANDBOX=1`（官方沙箱免询问） |
-| `model_flag` | 无 | 配了它 job 才能写 `model:`（如 `--model`） |
+| `prompt_flag` / `json` / `mode` / `safe_mode` | `--prompt` / `true` / 空=按危险度自动 / `plan` | zcode 专用（plans/003） |
 | `profile` | `headless` | dsh 专用 |
 
 **DSH 源码启动示例（本机无全局 dsh 时，实测方式）**：
@@ -185,12 +187,14 @@ schedule: { cron: "*/30 9-18 * * 1-5" } # 工作日 9-18 点每 30 分
 agents:
   dsh:
     command:
-      - "D:\\Program Files\\nodejs\\node.exe"
-      - "D:\\DSH\\deepseek-harness\\node_modules\\tsx\\dist\\cli.mjs"
+      - "<node.exe 路径>"                       # 例: C:\Program Files\nodejs\node.exe
+      - "<DSH源码目录>\\node_modules\\tsx\\dist\\cli.mjs"
       - "--tsconfig"
-      - "D:\\DSH\\deepseek-harness\\tsconfig.json"
-      - "D:\\DSH\\deepseek-harness\\apps\\cli\\src\\bin.ts"
+      - "<DSH源码目录>\\tsconfig.json"
+      - "<DSH源码目录>\\apps\\cli\\src\\bin.ts"
 ```
+
+WorkBuddy 客户端内嵌 CLI 同理（`["<node.exe>", "<WorkBuddy安装目录>\\resources\\app.asar.unpacked\\cli\\bin\\codebuddy"]`），zcode 亦然——**先用该 argv 直接运行一次进入 TUI 完成 `/login`/`login`**，之后 headless 长期可用。
 
 > 用 node 直调、**不要**写 `.cmd` 批处理包装：cmd.exe 的 GBK 码页会破坏含中文/引号的 prompt（见 §12）。
 
@@ -209,7 +213,7 @@ agents:
 
 - `{prompt}` 必含；`{session}` 出现即视为支持续接（`resume: true/false` 可显式覆盖）。
 - 无 session 时 `{session}` 连同**其前面的旗标参数**（以 `-` 开头）一起丢弃，首轮自动降级为新会话。
-- stdout 非 JSON 时自动回退原文透传。zcode 若日后你实测到无头命令，这就是接入方式。
+- stdout 非 JSON 时自动回退原文透传。新 agent（未内置的）都走这条路接入，实测好用欢迎提 PR 内置化。
 
 ## 8. 安全模型
 
@@ -268,7 +272,7 @@ logs     <job> [-n N]    打印该 job 最近一次运行日志尾部(默认 50 
 **开机自启（Windows 任务计划程序）**：
 
 ```powershell
-schtasks /Create /TN onduty /SC ONLOGON /TR "onduty daemon --config D:\ClaudeData\agent_daemon\tasks.yaml"
+schtasks /Create /TN onduty /SC ONLOGON /TR "onduty daemon --config <项目目录>\tasks.yaml"
 ```
 
 ## 11. 状态与日志文件
@@ -290,9 +294,13 @@ state/
 | 症状 | 原因与解法 |
 |---|---|
 | `workdir ... 不在 safety.allow_roots 白名单内` | §8 硬规则。把该目录纳入白名单，或把任务挪进 sandbox |
-| `agent 'xxx' 无法接入` | agent 名未注册 / zcode 占位。检查 `agents:` 拼写，或按 §7 custom 接入 |
+| `agent 'xxx' 无法接入` | agent 名未注册或内置适配器 `capable=False`。检查 `agents:` 拼写，或按 §7 custom 接入 |
 | `mode 不能为 continue`（DSH） | 官方 headless 无 resume。改 `mode: new` + `{{prev.output}}` 传上下文 |
 | codebuddy 无头只读不写 | 未开 `allow_danger: true`（v0.1 默认不放权，见 §8） |
+| codebuddy 报 "Authentication required" 且被判 failed | 客户端内嵌 CLI 需一次性登录：用 `agents.codebuddy.command` 那条 argv 直接运行进 TUI → `/login` 浏览器登录 → 之后 headless 长期可用 |
+| zcode 报 "Model config is missing" | CLI 独立于桌面配置。跑 `scripts/sync-zcode-cli-config.ps1` 从桌面 provider 生成 `~\.zcode\cli\config.json`（注意**必须无 BOM**，PowerShell 5 的 `Set-Content -Encoding UTF8` 会带 BOM 导致仍报缺失） |
+| zcode 报 "captcha verify failed (3007)" | start-plan 网关风控。跑一次 `node <zcode.cjs> login`（或对应 `login bigmodel-coding-plan`）走官方 OAuth 后再试 |
+| 退出码 0 但任务其实没干活(空输出) | 已知部分 CLI 认证失败仍返回 0。onduty 将"成功+空产出"判为 failed 并阻断 after 接力（plans/003 实测） |
 | Windows 下 0.1s 假失败、stderr 乱码"不是内部或外部命令" | 你八成用 `.cmd` 包装了 agent——cmd 的 GBK 码页破坏中文/引号。改 node/可执行文件 argv 直调 |
 | 控制台中文乱码 | GBK 代码页显示问题：`chcp 65001` 或 `$env:PYTHONIOENCODING='utf-8'`。落盘日志均为 UTF-8，不受影响 |
 | YAML 里 `on:` 相关怪错误 | YAML 1.1 把裸 `on` 当布尔值。本工具已兼容归一化，仍建议写 `on: success` 或 `"on":` |

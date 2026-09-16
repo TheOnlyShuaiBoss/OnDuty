@@ -19,7 +19,9 @@
 3. 新增 `pyproject.toml`:pip 包名 `onduty`,console script `onduty`,requires-python ≥3.10,依赖 PyYAML+croniter
 4. `LICENSE`(MIT)、`README.md`(英文主体)+`README.zh.md`、`docs/MANUAL.md`(中文手册)+`docs/MANUAL.en.md`
 5. tests 导入更名;tasks.example.yaml 注释更名
-6. **本地目录名保持 `D:\ClaudeData\agent_daemon`**(用户工作路径约束,repo 名与目录名解耦,不影响推送)
+6. **本地目录名保持 `agent_daemon`**(用户工作路径约束,repo 名与目录名解耦,不影响推送)
+
+> 晚间勘注: README 主从后调整为中文优先——`README.md`=中文、`README.en.md`=英文(见 plans/003)。
 
 ## 发布就绪清单(推送侧)
 

@@ -3,7 +3,7 @@
 ## 2026-09-16 · v0.1 MVP(按 plans/000 §13 五步全做)
 
 ### 范围
-本次从"只有方案文档"推进到"可运行的 v0.1 + 单测 + 端到端真机验证"。全部产物限 `D:\ClaudeData\agent_daemon\`。
+本次从"只有方案文档"推进到"可运行的 v0.1 + 单测 + 端到端真机验证"。全部产物限项目根目录。
 
 ### 1) 前置 spike(plans/001_adapter_spike.md)
 - DSH `dsh --profile headless` 本机**冒烟实测通过**(退出码 0,stdout=最终答复,无 session)
@@ -11,7 +11,7 @@
 - WorkBuddy=命令 `codebuddy`/`cbc`: 抓到官方无头文档,flag 确认(`-p`/`--output-format`/`--resume -r`/`-y`/`CODEBUDDY_IS_SANDBOX`)
 - zcode: 仅 TUI,无头能力无证据 → v0.1 内置 `capable=False`,配置层 fail fast 并指向 custom 接入
 - Windows toast: WinRT `CreateToastNotifier` 实测可弹,零依赖
-- 环境: `py -3.13`=D:\Python(PyYAML+croniter 已装);`python` 默认 3.11,一律用 `py -3.13`
+- 环境: `py -3.13`=独立安装的 3.13(PyYAML+croniter 已装);`python` 默认 3.11,一律用 `py -3.13`
 
 ### 2) 代码骨架(agentd/ + agentctl.py)
 config(校验) / state(JSON+JSONL+每run日志) / adapters(base+dsh+codebuddy+zcode+custom+registry) / runner(子进程+超时杀树+解析+回写+通知) / notify(log+toast+webhook) / scheduler(cron+控制文件+after链+补跑+防环) / __main__(run/once/check) / agentctl(list/status/run/logs/check)。
@@ -45,3 +45,12 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - `.gitignore` 补 build/dist/egg-info;CLAUDE.md 更名规则并新增"argv 直调、禁 .cmd 包中文"编码纪律
 - **回归全绿**: compile ✅;52 单测 ✅;tasks.yaml/tasks.example.yaml check ✅;`pip install -e .` 成功,全局 `onduty --help/once/status` 实测正常,toast 标题 `onduty · <job> [OK]` ✅
 - 待用户: 创建 GitHub 仓库(建议名 `onduty`)→ 提供 SSH 远程后推送(本仓库已完成首次提交,未推送)
+
+## 2026-09-16 晚 · 本机客户端实测(用户澄清 WorkBuddy/ZCode 是桌面客户端;plans/003)
+
+- **zcode 降级判决撤销→转正**: 客户端内嵌官方运行时 `resources\glm\zcode.cjs` v0.16.5,`--help` 实测 `--prompt/--json/--resume/--mode`,内置 ZcodeAdapter(allow_danger 映射 plan/yolo);BOM 陷阱(桌面 provider 生成 CLI 配置必须无 BOM)已破解并沉淀 `scripts/sync-zcode-cli-config.ps1`(零密钥入仓)
+- **WorkBuddy**: 客户端内嵌 CodeBuddy CLI v2.137.1,`--model/--session-id/-w worktree` 实测存在;codebuddy 适配器 model_flagged 默认 `--model` 转正;runner 新增"rc=0 空产出判 failed"防线 + `agents.<name>.env` 通用环境变量注入
+- **两家一次性准备(用户侧)**: codebuddy 进 TUI `/login` 一次;zcode 跑 `node zcode.cjs login` 过 captcha/OAuth(当前 start-plan JWT 无头被网关 3007 拒)→ 打通后跑 wb_step1→wb_step2_cont 真接力冒烟
+- **失败路径集成实测**: wb_step1(未登录)判 failed 且 after 阻断、zc_readonly 正确记失败 ✅
+- 文档工程: README 中文优先对调(README.md=中/README.en.md=英)、Rules.md 更名(本地 CLAUDE.md 降为 gitignored 指针)、全仓路径脱敏、plans/003 实测记录
+- 回归: 59 单测全绿;compile ✅;两份配置 check ✅
