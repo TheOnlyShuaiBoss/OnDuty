@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "onduty"
+version = "0.1.0"
+description = "Send your coding agents on shift — a local daemon that runs multi-agent CLI tasks on schedule or as a relay chain. 让 agent 替你值班。"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "TheOnlyShuaiBoss", email = "1454715738@qq.com" }]
+keywords = ["ai-agents", "cron", "scheduler", "coding-agent", "automation", "claude-code", "relay"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "PyYAML>=6.0",
+    "croniter>=2.0",
+]
+
+[project.scripts]
+onduty = "onduty.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["onduty*"]

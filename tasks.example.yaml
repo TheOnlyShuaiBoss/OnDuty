@@ -1,0 +1,89 @@
+# onduty 任务配置示例(复制为 tasks.yaml 后修改)
+# 调度四选一: cron(定时) / once_at(v0.2) / after(前任务完成接力) / 不写 schedule 即手动
+# 适配器 flag 依据与实测结论见 plans/001_adapter_spike.md
+
+defaults:
+  timeout_minutes: 30        # 单任务超时,强杀记失败(主方案 §8)
+  notify: [log, toast]       # log / toast / webhook
+  catchup: false             # daemon 重启后补跑错过的 cron(主方案 §6)
+  allow_danger: false        # 放权需逐 job 显式 true,且 workdir 已被强制在白名单内
+
+scheduler:
+  tick_seconds: 30           # 对账周期
+
+notify:
+  webhook_url: ""            # Server酱 / Telegram / 企业微信自建机器人
+  webhook_body_template: '{"text": "[onduty] {{job}} {{status}}: {{summary}}"}'
+
+safety:
+  allow_roots:               # 强制隔离: 所有 job 的 workdir 必须落在其中之一(相对路径按本文件目录解析)
+    - sandbox
+    # - D:\ClaudeData\agent_daemon\sandbox
+
+agents:
+  dsh:
+    # 情形A: dsh 已全局安装 → 删掉 command,默认就是 ["dsh"]
+    # 情形B: 从源码 checkout 跑(本机实证方式)。务必用 node 直调 argv 列表,
+    #        不要用 .cmd 批处理包装——cmd 的 GBK 码页会破坏含中文/引号的 prompt(verlog 2026-09-16)
+    command:
+      - "D:\\Program Files\\nodejs\\node.exe"
+      - "D:\\DSH\\deepseek-harness\\node_modules\\tsx\\dist\\cli.mjs"
+      - "--tsconfig"
+      - "D:\\DSH\\deepseek-harness\\tsconfig.json"
+      - "D:\\DSH\\deepseek-harness\\apps\\cli\\src\\bin.ts"
+  workbuddy:                  # = codebuddy CLI(@tencent-ai/codebuddy-code),官方无头文档 plans/001 §2
+    # command: codebuddy      # 默认即可;若品牌安装命令不同再覆盖
+    # model_flag: "--model"   # 文档未证实,自行确认后打开才能给 job 配 model
+  myagent:                    # custom 示例: 任何"命令行非交互"agent 免代码接入(含 zcode 实测后的转正)
+    type: custom
+    command: ["myagent", "--print", "{prompt}", "--resume", "{session}"]
+    # session_keys: [session_id]  # stdout 为 JSON 时的会话 id 键
+    # allow_args: ["--yes"]       # job.allow_danger 时追加
+    # env: {MY_TOKEN: "..."}
+
+jobs:
+  # 定时: 每天 08:00 用 DSH 新开对话做汇总(DSH 无 resume,只能 new)
+  - name: daily_review
+    agent: dsh
+    mode: new
+    workdir: sandbox/daily
+    prompt: 汇总本目录昨天的改动,输出 CHANGELOG 草案到 changelog_draft.md
+    schedule:
+      cron: "0 8 * * *"
+    timeout_minutes: 20
+
+  # 手动: onduty run fix_tests(或 --inline 直跑)
+  - name: fix_tests
+    agent: workbuddy
+    mode: new
+    workdir: sandbox/proj
+    prompt: 运行测试,把失败项和原因写入 report.md
+    allow_danger: true        # 无头放权(codebuddy→ -y + CODEBUDDY_IS_SANDBOX=1)
+
+  # 接力: fix_tests 成功后自动续接同会话修第一个失败项
+  - name: fix_tests_followup
+    agent: workbuddy
+    mode: continue            # codebuddy --resume(文档依据,装好冒烟转正)
+    workdir: sandbox/proj
+    prompt: |-
+      上一段的结论:
+      {{prev.output}}
+      请按报告修复第一个失败项。
+    schedule:
+      after: fix_tests
+      on: success             # success(默认) / always
+
+  # DSH 链式示例: 用文本注入传递上下文(替代会话续接)
+  - name: report_then_fix
+    agent: dsh
+    mode: new
+    workdir: sandbox/proj
+    prompt: |-
+      上一段结论: {{prev.output}}
+      基于此,把最紧迫的一个待办做完并写 done.md。
+    schedule:
+      after: daily_review
+      on: always
+
+  # zcode: v0.1 内置占位不可用(plans/001 §3)。实测到无头命令后:
+  #   在 agents 段加  zcode: {type: custom, command: ["zcode", "-p", "{prompt}"]}  即可接入
