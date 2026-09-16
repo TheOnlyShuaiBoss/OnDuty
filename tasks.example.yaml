@@ -1,6 +1,8 @@
 # onduty 任务配置示例(复制为 tasks.yaml 后修改)
 # 调度四选一: cron(定时) / once_at(v0.2) / after(前任务完成接力) / 不写 schedule 即手动
 # 适配器 flag 依据与实测结论见 plans/001_adapter_spike.md 与 plans/003_local_clients_probe.md
+# ⚠ 本文件中所有 <尖括号> 都是占位符,必须替换成你机器的真实值再运行,否则 once 会报"找不到命令";
+#    终端里请勿原样粘贴含 < > 的行(shell 会把 < 当重定向符)
 
 defaults:
   timeout_minutes: 30        # 单任务超时,强杀记失败(主方案 §8)

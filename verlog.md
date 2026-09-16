@@ -60,3 +60,9 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - 用户 D:\CSQ 克隆→pip install -e→`onduty check` 报 `FileNotFoundError` traceback:**行为正确**(tasks.yaml 属本机配置,gitignore 排除,发行只带 example),**体验错误**已修:缺配置→三行中文指引+exit 2(check/list/status/run/logs 全路径),daemon 同前检
 - 新增 tests/test_cli.py 3 项(缺配置指引/daemon 前检/有效配置 exit0);回归 **62 全绿** ✅
 - 环境旁证: 用户默认 python=3.11 也装得跑得起(打包声明 ≥3.10 兑现);其 clone 嵌套(OnDuty\OnDuty)为目录选择习惯,非仓库问题
+
+## 2026-09-16 晚三 · 用户二次反馈(占位符/预览误导/规则提炼)
+
+- 用户把指令里的占位符 `<那个job名>` 原样贴进 PowerShell → `<` 重定向报错。**教训入 Rules**:文档占位符必须显式警告;tasks.example.yaml 头部已加"尖括号=占位符,勿原样粘贴"提示
+- 修 `onduty check` 预览误导:`mode:new` 的 job 不再显示 `--resume SESSION-DEMO`(仅 continue 才展示续接参数);回归 62 全绿
+- 规则提炼入 Rules.md:PS5.1 中文脚本需带 BOM(与"给 node 的 JSON 需无 BOM"方向相反,按目标程序定)、退出码不信任原则、YAML 布尔陷阱、推送前泄露终扫、客户端 agent 解剖安装目录三步实测法

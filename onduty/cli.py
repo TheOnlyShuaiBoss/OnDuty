@@ -70,7 +70,8 @@ def cmd_check(args) -> int:
         s = j["schedule"]
         desc = s["cron"] if s["kind"] == "cron" else (s["after"] if s["kind"] == "after" else s["kind"])
         try:
-            argv = ad.build(j, agent_cfg, "<PROMPT>", "SESSION-DEMO" if ad.supports_resume else None)
+            demo_session = "SESSION-DEMO" if (ad.supports_resume and j["mode"] == "continue") else None
+            argv = ad.build(j, agent_cfg, "<PROMPT>", demo_session)
         except Exception as e:
             print(f"  {j['name']:<22} [{j['agent']}/{j['mode']}/{desc}] 建令失败: {e}")
             continue
