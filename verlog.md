@@ -54,3 +54,9 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - **失败路径集成实测**: wb_step1(未登录)判 failed 且 after 阻断、zc_readonly 正确记失败 ✅
 - 文档工程: README 中文优先对调(README.md=中/README.en.md=英)、Rules.md 更名(本地 CLAUDE.md 降为 gitignored 指针)、全仓路径脱敏、plans/003 实测记录
 - 回归: 59 单测全绿;compile ✅;两份配置 check ✅
+
+## 2026-09-16 晚二 · 用户克隆实测反馈修复(plans 外增量)
+
+- 用户 D:\CSQ 克隆→pip install -e→`onduty check` 报 `FileNotFoundError` traceback:**行为正确**(tasks.yaml 属本机配置,gitignore 排除,发行只带 example),**体验错误**已修:缺配置→三行中文指引+exit 2(check/list/status/run/logs 全路径),daemon 同前检
+- 新增 tests/test_cli.py 3 项(缺配置指引/daemon 前检/有效配置 exit0);回归 **62 全绿** ✅
+- 环境旁证: 用户默认 python=3.11 也装得跑得起(打包声明 ≥3.10 兑现);其 clone 嵌套(OnDuty\OnDuty)为目录选择习惯,非仓库问题

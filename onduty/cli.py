@@ -11,9 +11,22 @@ from .state import StateStore
 
 
 def _load(config_path: str):
-    cfg = load_config(config_path)
+    if not os.path.isfile(config_path):
+        hint = (f"未找到配置文件: {os.path.abspath(config_path)}\n"
+                f"  首次使用: copy tasks.example.yaml tasks.yaml(或 cp),然后编辑 allow_roots 与 jobs\n"
+                "  字段说明: docs/MANUAL.md §4;校验通过后先 `onduty check` 预览,再 `onduty once <job>` 试跑")
+        raise SystemExit(_print_and_code(hint, 2))
+    try:
+        cfg = load_config(config_path)
+    except ConfigError as e:
+        raise SystemExit(_print_and_code(f"配置不合法: {e}", 2))
     state = StateStore(os.path.join(cfg["base"], "state"))
     return cfg, state
+
+
+def _print_and_code(msg: str, code: int) -> int:
+    print(msg)
+    return code
 
 
 def _daemon_pid(state: StateStore) -> int | None:
@@ -30,6 +43,10 @@ def _daemon_pid(state: StateStore) -> int | None:
 # ---------- 子命令 ----------
 
 def cmd_daemon(args) -> int:
+    if not os.path.isfile(args.config):
+        print(f"未找到配置文件: {os.path.abspath(args.config)}\n"
+              "  首次使用: copy tasks.example.yaml tasks.yaml(或 cp),再编辑 allow_roots 与 jobs")
+        return 2
     return scheduler.daemon(args.config, tick_seconds=args.tick)
 
 
