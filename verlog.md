@@ -82,3 +82,10 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - 用户把指令里的占位符 `<那个job名>` 原样贴进 PowerShell → `<` 重定向报错。**教训入 Rules**:文档占位符必须显式警告;tasks.example.yaml 头部已加"尖括号=占位符,勿原样粘贴"提示
 - 修 `onduty check` 预览误导:`mode:new` 的 job 不再显示 `--resume SESSION-DEMO`(仅 continue 才展示续接参数);回归 62 全绿
 - 规则提炼入 Rules.md:PS5.1 中文脚本需带 BOM(与"给 node 的 JSON 需无 BOM"方向相反,按目标程序定)、退出码不信任原则、YAML 布尔陷阱、推送前泄露终扫、客户端 agent 解剖安装目录三步实测法
+
+## 2026-09-17 晚 · DSH 接力链转正 + 用户环境修复确认
+
+- **DSH 配置修复确认**: 用户侧 `~/.dsh/settings.yaml` 第132行 `reasoningEfforts` 重复键系某 AI 误操作所致,用户已删修复 → headless 恢复可用 ✅
+- **DSH"继续进行中任务"实测通过**: `once dsh_a`(写 ANSWER=42,85s)→ after 自动接力 `dsh_b`(读 a.md 确认、写 CONFIRMED,93s);a.md/b.md 均落盘正确 ✅。说明: DSH headless 无会话续接,接力用 `{{prev.output}}` 文本注入 + 文件载体,符合主方案设计
+- 用例沉淀: tasks.yaml 内 dsh_a/dsh_b 保留为"DSH 继续进行中任务"的常驻示例(不入库)
+- ⚠️ **依赖提示**: 本机 dsh 适配 `command` 指向源码 checkout 的 tsx/bin.ts/tsconfig 绝对路径(plans/001 §1)。**DSH 本体升级/移动目录后**,这些路径若失效,headless 会起不来——届时把 tasks.yaml 里 agents.dsh.command 改成新路径即可,无需改 onduty 代码
