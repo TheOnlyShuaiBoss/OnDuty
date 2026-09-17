@@ -38,13 +38,20 @@ class CodebuddyAdapter(Adapter):
         return {}
 
     def parse(self, stdout):
+        """codebuddy --output-format json 实测形态(plans/003): 顶层是消息数组,
+        尾部带 claude 风格 result 对象 {"type":"result","result":..,"session_id":..}。
+        兼容: 顶层 list → 取最后一个 result 型元素;顶层 dict → 直接取;非 JSON → 原文。"""
         raw = stdout.strip()
+        if not raw:
+            return None, raw
         try:
             obj = json.loads(raw)
         except (ValueError, TypeError):
             return None, raw
+        if isinstance(obj, list) and obj:
+            obj = next((m for m in reversed(obj) if isinstance(m, dict) and m.get("type") == "result"), obj[-1])
         if isinstance(obj, dict):
             sid = obj.get("session_id") or obj.get("sessionId")
             out = obj.get("result") or obj.get("text") or raw
-            return sid, str(out)
+            return (str(sid) if sid else None), str(out)
         return None, raw

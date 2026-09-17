@@ -1,4 +1,4 @@
-# sync-zcode-cli-config.ps1 — 从 ZCode 桌面配置生成 CLI 配置(~/.zcode/cli/config.json)
+﻿# sync-zcode-cli-config.ps1 — 从 ZCode 桌面配置生成 CLI 配置(~/.zcode/cli/config.json)
 # 背景: zcode CLI 运行时独立读取 ~/.zcode/cli/config.json,桌面客户端配置在 ~/.zcode/v2/config.json。
 # 本脚本把桌面已启用的 provider(apiKey/baseURL/models)复刻成 CLI 模板结构(plans/003)。
 # 关键: 必须无 BOM UTF-8 —— 带 BOM 会被运行时当无效配置(实测)。
@@ -16,7 +16,13 @@ $v2 = Get-Content $DesktopConfig -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($ProviderKey) { $name = $ProviderKey }
 else {
     $name = $v2.provider.PSObject.Properties | Where-Object { $_.Value.enabled -eq $true } | Select-Object -First 1 -ExpandProperty Name
-    if (-not $name) { Write-Error "桌面配置里没有 enabled:true 的 provider,请手动指定 -ProviderKey"; exit 3 }
+    if (-not $name) {
+        # login 等操作可能清空 enabled: 兜底选有 apiKey 的(优先 bigmodel-coding-plan)
+        $withKey = $v2.provider.PSObject.Properties | Where-Object { $_.Value.options.apiKey }
+        $name = ($withKey | Where-Object { $_.Name -match "coding-plan" } | Select-Object -First 1).Name
+        if (-not $name) { $name = ($withKey | Select-Object -First 1).Name }
+    }
+    if (-not $name) { Write-Error "桌面配置里没有可用 provider(enabled 或带 apiKey),请手动指定 -ProviderKey"; exit 3 }
 }
 $all = $v2.provider.PSObject.Properties.Name -join ", "; "可选 provider: $all"
 $p = $v2.provider.$name

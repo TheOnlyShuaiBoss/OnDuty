@@ -302,6 +302,8 @@ state/
 | codebuddy 报 "Authentication required" 且被判 failed | 客户端内嵌 CLI 需一次性登录：用 `agents.codebuddy.command` 那条 argv 直接运行进 TUI → `/login` 浏览器登录 → 之后 headless 长期可用 |
 | zcode 报 "Model config is missing" | CLI 独立于桌面配置。跑 `scripts/sync-zcode-cli-config.ps1` 从桌面 provider 生成 `~\.zcode\cli\config.json`（注意**必须无 BOM**，PowerShell 5 的 `Set-Content -Encoding UTF8` 会带 BOM 导致仍报缺失） |
 | zcode 报 "captcha verify failed (3007)" | start-plan 网关风控。跑一次 `node <zcode.cjs> login`（或对应 `login bigmodel-coding-plan`）走官方 OAuth 后再试 |
+| zcode 报 `1113`（zai 通道） | Z.AI Coding Plan 免费额度窗口为**夜间 23:00–次日 09:00**，白天报余额不足是正常的——把 job 排到夜里跑（这正是 onduty 的用法） |
+| zcode 报 `1309`（bigmodel 通道） | GLM Coding Plan 套餐到期，需到 bigmodel.cn 续订 |
 | 退出码 0 但任务其实没干活(空输出) | 已知部分 CLI 认证失败仍返回 0。onduty 将"成功+空产出"判为 failed 并阻断 after 接力（plans/003 实测） |
 | Windows 下 0.1s 假失败、stderr 乱码"不是内部或外部命令" | 你八成用 `.cmd` 包装了 agent——cmd 的 GBK 码页破坏中文/引号。改 node/可执行文件 argv 直调 |
 | 控制台中文乱码 | GBK 代码页显示问题：`chcp 65001` 或 `$env:PYTHONIOENCODING='utf-8'`。落盘日志均为 UTF-8，不受影响 |

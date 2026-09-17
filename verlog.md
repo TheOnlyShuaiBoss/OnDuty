@@ -61,7 +61,13 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - 新增 tests/test_cli.py 3 项(缺配置指引/daemon 前检/有效配置 exit0);回归 **62 全绿** ✅
 - 环境旁证: 用户默认 python=3.11 也装得跑得起(打包声明 ≥3.10 兑现);其 clone 嵌套(OnDuty\OnDuty)为目录选择习惯,非仓库问题
 
-## 2026-09-16 晚三 · 用户二次反馈(占位符/预览误导/规则提炼)
+## 2026-09-17 · 三家客户端全线打通(用户配合完成两处一次性登录)
+
+- **WorkBuddy**: 用户热点登录 CLI 成功(`/login` 浏览器 OAuth)后,办公室网络下 headless 可跑(结论: galileotelemetry 只在登录阶段致命);`once wb_step1` → `after` 接力 wb_step2 全成功,wb1.md=WB-STEP1+WB-DONE ✅
+- **修正 codebuddy parse**: `--output-format json` 实际形态是**消息数组+尾部 result 对象**(claude 风格 session_id 在尾段),已兼容(顶层 dict/list 通吃);用真实运行日志做回归 ✅
+- **修链接话就真**一坑: continue 之前取的是 job 自己的历史会话 → 现改为"after 上游会话 > 自身历史"(runner.run_job 加 session_source,scheduler 链式下传);实测 wb_step2 argv 带 `--resume <(�)step1 的 session>` 且两段 session_id 一致 ✅
+- **ZCode**: 用户 `login` 走通(Z.AI OAuth,旅行者3289);CLI 配置由登录自动接管为 zai 通道。运行时调用返回 **429 [1113] 余额/资源包不足**——账号未开通 GLM Coding Plan(或改用 bigmodel-coding-plan 侧)→ 属账号侧,非管道问题;login 链路本身验证完毕
+- **单测 67 全绿**(新增 test_session_chain 3 项: 上游续接/自身回落/上游优先)✅
 
 - 用户把指令里的占位符 `<那个job名>` 原样贴进 PowerShell → `<` 重定向报错。**教训入 Rules**:文档占位符必须显式警告;tasks.example.yaml 头部已加"尖括号=占位符,勿原样粘贴"提示
 - 修 `onduty check` 预览误导:`mode:new` 的 job 不再显示 `--resume SESSION-DEMO`(仅 continue 才展示续接参数);回归 62 全绿

@@ -33,15 +33,17 @@ def pid_alive(pid: int) -> bool:
         return False
 
 
-def run_chain(cfg: dict, state: StateStore, job: dict, trigger: str = "manual", prev_output: str = "") -> runner.RunResult:
-    """执行 job,成功后(或 on:always)触发 after 依赖。v0.1 串行,链深度天然有界(配置校验防环)。"""
-    res = runner.run_job(cfg, state, job, trigger, prev_output)
+def run_chain(cfg: dict, state: StateStore, job: dict, trigger: str = "manual", prev_output: str = "",
+              session_source: str | None = None) -> runner.RunResult:
+    """执行 job,成功后(或 on:always)触发 after 依赖。v0.1 串行,链深度天然有界(配置校验防环)。
+    session_source 随链传递: 依赖方 mode:continue 时续接上游会话。"""
+    res = runner.run_job(cfg, state, job, trigger, prev_output, session_source=session_source)
     _dlog(state, f"run {job['name']} [{trigger}] -> {res.status} (exit={res.exit_code}, {res.duration_s:.0f}s)")
     for dep in cfg["jobs"]:
         s = dep["schedule"]
         if s["kind"] == "after" and s["after"] == job["name"]:
             if (s["on"] == "success" and res.status == "success") or s["on"] == "always":
-                run_chain(cfg, state, dep, "after", res.output)
+                run_chain(cfg, state, dep, "after", res.output, session_source=job["name"])
     return res
 
 

@@ -62,7 +62,7 @@ jobs:
 |---|---|---|---|
 | **DSH** | ✅ `--profile headless` 实测 | ❌ 官方限制 → `{{prev.output}}` 传话 | 无 |
 | **CodeBuddy / WorkBuddy**（客户端内嵌 CLI 或 npm 版） | ✅ `-p --output-format json` 实测 | ✅ `--resume <id>` 实测存在 | CLI 内 `/login` 一次（浏览器 OAuth） |
-| **ZCode**（客户端内嵌运行时或 npm 版） | ✅ `--prompt --json` 实测 | ✅ `--resume sess_xxx` | `login` 过一次验证码/OAuth；桌面 provider 可用 `scripts/sync-zcode-cli-config.ps1` 生成 CLI 配置 |
+| **ZCode**（客户端内嵌运行时或 npm 版） | ✅ `--prompt --json` 实测 | ✅ `--resume sess_xxx` | `login` 一次（OAuth）；CLI 配置可用 `scripts/sync-zcode-cli-config.ps1` 从桌面 provider 生成。注意 **Z.AI 免费额度窗口 23:00–09:00**（夜间任务正适合它） |
 | 任意非交互 CLI | ✅ | 按其能力 | `agents.<名>: {type: custom, command: [...{prompt}...]}` |
 | claude code / codex / opencode | ✅（文档核实） | ✅ | v0.3 内置化 |
 

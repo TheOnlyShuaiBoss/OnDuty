@@ -51,6 +51,19 @@ class TestCodebuddy(unittest.TestCase):
         sid, out = ad.parse('{"type":"result","result":"结论ABC","session_id":"s-9"}')
         self.assertEqual((sid, out), ("s-9", "结论ABC"))
 
+    def test_parse_message_array_with_result_tail(self):
+        # 本机实测形态(plans/003): 顶层是消息数组,尾部带 result 对象
+        ad = CodebuddyAdapter()
+        payload = '[{"type":"message","role":"user","content":[]},{"type":"message","role":"assistant","content":[]},{"type":"result","subtype":"success","result":"WB-STEP1","session_id":"819d8853"}]'
+        sid, out = ad.parse(payload)
+        self.assertEqual((sid, out), ("819d8853", "WB-STEP1"))
+
+    def test_parse_message_array_without_result(self):
+        ad = CodebuddyAdapter()
+        sid, out = ad.parse('[{"type":"message","role":"assistant","content":[{"type":"text","text":"hi"}]}]')
+        self.assertIsNone(sid)
+        self.assertIn("hi", out)  # 回退: 原文透传,不静默丢弃
+
     def test_parse_plain_text_fallback(self):
         ad = CodebuddyAdapter()
         sid, out = ad.parse("纯文本输出")

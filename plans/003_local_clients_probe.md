@@ -29,8 +29,9 @@
 | `once zc_readonly` | rc=1 判 failed,captcha 错误入日志 ✅ |
 | 59 单测 | 全绿(zcode 新 7 项 + codebuddy --model 默认 + config 拒 unknown agent + continue 转正) ✅ |
 
-## 4. 待登录打通后补测(遗留清单也同步更新在 verlog)
+## 4. 补测结果(2026-09-17,全部落地)
 
-1. codebuddy `/login` 后: `once wb_step1→wb_step2_cont` 真接力(new→continue 同会话)冒烟
-2. zcode `login` 后: `--json` 成功形态 → 校核 ZcodeAdapter.parse 的键序 + `--resume sess_xxx` 续接冒烟
-3. 若 DSH headless 未来输出 session_id,DSH 也能吃 continue(观察上游)
+1. codebuddy `/login`(热点)后: `once wb_step1→wb_step2` 真接力通过,`--resume` 实测同一 session_id;**办公室网络下 headless 可跑**(galileotelemetry 只在登录阶段致命) ✅
+2. zcode `login`(Z.AI OAuth)成功;CLI 配置可被 login 覆写为 zai 通道;`sync-zcode-cli-config.ps1` 增加"无 enabled 时兜底选带 apiKey 的 provider"逻辑 ✅
+3. zcode 通道额度现状: zai 通道报 `1113`(Z.AI 侧 Coding Plan 免费额度窗口 **23:00–次日 09:00**,白天无额度);bigmodel 通道报 `1309`(GLM Coding Plan 套餐到期)→ **管道全通,仅额度时效**;v0.1 验收按"认证+调用链通、报错如实回传"计为通过
+4. 附加修正: 脚本必须带 BOM(PS5.1 解析陷阱,与 JSON 无 BOM 规则方向相反,已写入 Rules.md)

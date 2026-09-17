@@ -27,8 +27,8 @@ class SchedBase(unittest.TestCase):
         self.state = StateStore(self._td.name)
         self.calls = []
 
-        def fake_run_job(cfg, state, job, trigger="manual", prev_output=""):
-            self.calls.append((job["name"], trigger, prev_output))
+        def fake_run_job(cfg, state, job, trigger="manual", prev_output="", session_source=None):
+            self.calls.append((job["name"], trigger, prev_output, session_source))
             return fake_result(job)
         self._orig = runner.run_job
         runner.run_job = fake_run_job
@@ -48,7 +48,7 @@ class TestCron(SchedBase):
         past = (datetime.now() - timedelta(minutes=1)).isoformat(timespec="seconds")
         self.state.update_job("c1", next_due=past)
         scheduler._cron_tick(cfg, self.state)
-        self.assertEqual(self.calls, [("c1", "cron", "")])
+        self.assertEqual(self.calls, [("c1", "cron", "", None)])  # (job,trigger,prev,session_source)
         due = datetime.fromisoformat(self.state.job("c1")["next_due"])
         self.assertGreater(due, datetime.now())
 
@@ -70,22 +70,22 @@ class TestCron(SchedBase):
         last = (datetime.now() - timedelta(days=1)).isoformat(timespec="seconds")
         self.state.update_job("c4", last_run_at=last)
         scheduler._cron_tick(self.cfg([job]), self.state)
-        self.assertEqual(self.calls, [("c4", "catchup", "")])
+        self.assertEqual(self.calls, [("c4", "catchup", "", None)])
 
 
 class TestAfterChain(SchedBase):
-    def test_success_triggers_dependent_with_output(self):
+    def test_success_triggers_dependent_with_output_and_session_source(self):
         j1 = mkjob("j1")
         j2 = mkjob("j2", after="j1")
         scheduler.run_chain(self.cfg([j1, j2]), self.state, j1, "manual")
-        self.assertEqual(self.calls, [("j1", "manual", ""), ("j2", "after", "OUT-j1")])
+        self.assertEqual(self.calls, [("j1", "manual", "", None), ("j2", "after", "OUT-j1", "j1")])
 
     def test_on_success_blocks_when_failed(self):
         j1 = mkjob("j1")
         j2 = mkjob("j2", after="j1")
 
-        def failing(cfg, state, job, trigger="manual", prev_output=""):
-            self.calls.append((job["name"], trigger, prev_output))
+        def failing(cfg, state, job, trigger="manual", prev_output="", session_source=None):
+            self.calls.append((job["name"], trigger, prev_output, session_source))
             return runner.RunResult(job=job["name"], agent="dsh", status="failed",
                                     trigger=trigger, exit_code=1, duration_s=0.1, output="")
         runner.run_job = failing
@@ -96,8 +96,8 @@ class TestAfterChain(SchedBase):
         j1 = mkjob("j1")
         j2 = mkjob("j2", after="j1", on="always")
 
-        def failing(cfg, state, job, trigger="manual", prev_output=""):
-            self.calls.append((job["name"], trigger, prev_output))
+        def failing(cfg, state, job, trigger="manual", prev_output="", session_source=None):
+            self.calls.append((job["name"], trigger, prev_output, session_source))
             return runner.RunResult(job=job["name"], agent="dsh", status="failed",
                                     trigger=trigger, exit_code=1, duration_s=0.1, output="")
         runner.run_job = failing
@@ -112,7 +112,7 @@ class TestMarkers(SchedBase):
         with open(marker, "w", encoding="utf-8") as f:
             f.write("x")
         scheduler._handle_markers(self.cfg([j1]), self.state)
-        self.assertEqual(self.calls, [("m1", "manual", "")])
+        self.assertEqual(self.calls, [("m1", "manual", "", None)])
         self.assertFalse(os.path.exists(marker))
 
     def test_unknown_marker_removed(self):

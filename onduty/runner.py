@@ -56,14 +56,22 @@ def _kill_tree(proc) -> None:
     proc.kill()
 
 
-def run_job(cfg: dict, state, job: dict, trigger: str = "manual", prev_output: str = "") -> RunResult:
-    """跑一个任务(阻塞)。失败不抛出: 以 status 表达,并照常通知与落盘。"""
+def run_job(cfg: dict, state, job: dict, trigger: str = "manual", prev_output: str = "",
+            session_source: str | None = None) -> RunResult:
+    """跑一个任务(阻塞)。失败不抛出: 以 status 表达,并照常通知与落盘。
+    session_source: after 接力传入的上游 job 名——mode:continue 优先续接其会话。"""
     started = datetime.now()
     t0 = time.monotonic()
     adapter = cfg["adapters"].get(job["agent"]) or resolve_adapter(job["agent"], cfg["agents"])
     agent_cfg = cfg["agents"].get(job["agent"], {})
 
-    session_id = state.job(job["name"]).get("session_id") if job["mode"] == "continue" else None
+    session_id = None
+    if job["mode"] == "continue":
+        # 续接优先级: after 上游 job 的会话(接力语义) > 自己的历史会话(独立续聊)
+        if session_source:
+            session_id = state.job(session_source).get("session_id")
+        if not session_id:
+            session_id = state.job(job["name"]).get("session_id")
     log_path = state.new_log_path(job["name"], started)
     try:
         prompt = render_prompt(job, prev_output, cfg["base"])
