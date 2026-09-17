@@ -80,7 +80,7 @@ tasks.yaml ──► onduty daemon ──► 调度对账(cron 到期 / 手动�
                     └─► 通知: log · WinRT toast · webhook
 ```
 
-单进程、串行执行、状态全落盘——重启不丢，错过的定时可按 `catchup` 补跑一次。
+单进程、按 workdir 并行（同目录严格串行）、状态全落盘——重启不丢，错过的定时可按 `catchup` 补跑一次。
 
 ## 仓库结构
 
@@ -90,9 +90,15 @@ docs/MANUAL.md     # 中文操作手册(字段总表/FAQ/排障) · MANUAL.en.md
 plans/             # 设计文档:000 主方案 · 001/003 适配实测 · 002 命名
 scripts/           # 辅助脚本(zcode CLI 配置生成等,零密钥)
 tasks.example.yaml # 带注释的参考配置
-tests/             # 59 个标准库单测
+tests/             # 80 个标准库单测
 Rules.md           # 项目工作规则
 ```
+
+## 状态与路线图
+
+- **2026-09-17 · v0.2 完成**：once_at 一次性定时、失败重试（max+退避）、按 workdir 并行、auto git worktree、state_dir 覆盖；80 单测全绿，全部真机验收（见 verlog.md）
+- 2026-09-16 · v0.1 完成并公开：三家 agent 适配（WorkBuddy/ZCode 客户端内嵌 CLI 实测）
+- **下一步 v0.3**：web UI、claude/codex/opencode 内置适配、Z.AI 夜间额度窗实测（管道已就绪，纯额度时效）
 
 ## 许可
 

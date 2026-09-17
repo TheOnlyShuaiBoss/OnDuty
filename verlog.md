@@ -69,6 +69,16 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - **ZCode**: 用户 `login` 走通(Z.AI OAuth,旅行者3289);CLI 配置由登录自动接管为 zai 通道。运行时调用返回 **429 [1113] 余额/资源包不足**——账号未开通 GLM Coding Plan(或改用 bigmodel-coding-plan 侧)→ 属账号侧,非管道问题;login 链路本身验证完毕
 - **单测 67 全绿**(新增 test_session_chain 3 项: 上游续接/自身回落/上游优先)✅
 
+## 2026-09-17 · v0.2 实施(plans/004,用户批准开工)
+
+- **once_at 一次性定时**: config 解析(多格式/非法拒绝)+ daemon 到点派发一次并 `once_fired` 归档;真机: 设 75 秒后时刻,准点触发一次且仅一次 ✅
+- **失败重试**: `retry: {max, backoff_minutes}`,daemon 内排期队列,到点重派(trigger=retry),成功清零计数,达上限放弃;真机: 固定失败 job → 手动触发失败 → 2 次退避重试 → 上限放弃,runs.jsonl 含 retry 记录 ✅
+- **按 workdir 并行**: 每 workdir 一把 `threading.RLock`(同线程链式重入安全)+ 在飞任务注册表(同名在飞跳过);主循环只派发;单测覆盖同目录串行/在飞去重 ✅
+- **auto_git_worktree**: `safety.auto_git_worktree: true` 时 git 仓库任务自动 `git worktree add --detach` 到 `state/worktrees/`,非仓库/git 异常回退原目录记日志;真机: echo 任务在 worktree 写文件,主仓库零污染 ✅
+- **state_dir 可覆盖**: `safety.state_dir`,daemon 启动先解析一次配置取 state_dir ✅
+- 修正旧 once_at 拒绝测试为正向 + 重试/once_at/workdir锁 8 项新测,**80 单测全绿** ✅
+- ⚠️ 用户环境插曲: DSH headless 因用户侧 `~/.dsh/settings.yaml` 第132行 `reasoningEfforts` 重复键损坏 → 已定位告知(非 onduty 问题,DSH 配置修复后 DSH 链即可跑)
+
 - 用户把指令里的占位符 `<那个job名>` 原样贴进 PowerShell → `<` 重定向报错。**教训入 Rules**:文档占位符必须显式警告;tasks.example.yaml 头部已加"尖括号=占位符,勿原样粘贴"提示
 - 修 `onduty check` 预览误导:`mode:new` 的 job 不再显示 `--resume SESSION-DEMO`(仅 continue 才展示续接参数);回归 62 全绿
 - 规则提炼入 Rules.md:PS5.1 中文脚本需带 BOM(与"给 node 的 JSON 需无 BOM"方向相反,按目标程序定)、退出码不信任原则、YAML 布尔陷阱、推送前泄露终扫、客户端 agent 解剖安装目录三步实测法

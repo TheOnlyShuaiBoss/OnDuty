@@ -63,9 +63,22 @@ class TestConfig(unittest.TestCase):
         with self.assertRaises(config.ConfigError):
             self.load(BASE_JOB + "    schedule:\n      cron: \"99 99 * * *\"\n")
 
-    def test_once_at_rejected_in_v01(self):
+    def test_once_at_accepted_v02(self):
+        cfg = self.load(BASE_JOB + "    schedule:\n      once_at: \"2026-09-20 08:00\"\n")
+        self.assertEqual(cfg["jobs"][0]["schedule"]["kind"], "once_at")
+        self.assertEqual(cfg["jobs"][0]["schedule"]["once_at"], "2026-09-20T08:00:00")
+
+    def test_once_at_bad_time_rejected(self):
         with self.assertRaises(config.ConfigError):
-            self.load(BASE_JOB + "    schedule:\n      once_at: \"2026-09-20 08:00\"\n")
+            self.load(BASE_JOB + "    schedule:\n      once_at: \"明天下班前\"\n")
+
+    def test_retry_parsed(self):
+        cfg = self.load(BASE_JOB + "    retry: {max: 2, backoff_minutes: 3}\n")
+        self.assertEqual(cfg["jobs"][0]["retry"], {"max": 2, "backoff_minutes": 3.0})
+
+    def test_retry_default_off(self):
+        cfg = self.load(BASE_JOB)
+        self.assertEqual(cfg["jobs"][0]["retry"]["max"], 0)
 
     def test_after_unknown_rejected(self):
         with self.assertRaises(config.ConfigError):

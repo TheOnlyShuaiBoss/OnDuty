@@ -69,7 +69,9 @@ tasks.yaml ──► onduty daemon ──► scheduler (tick: cron due / queued 
                     └─► notify: log · WinRT toast · webhook
 ```
 
-Single process, serial execution, everything on disk — restart-safe with optional cron catch-up.
+Single process, per-workdir parallelism (same directory strictly serial), everything on disk — restart-safe with optional cron catch-up.
+
+**v0.2 (2026-09-17)**: `once_at` one-shot scheduling, failure retries (max + backoff), per-workdir parallel locks, auto git worktrees, overridable state dir. 80 tests green, all live-verified.
 
 ## How is this different?
 

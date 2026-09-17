@@ -56,6 +56,33 @@ def _kill_tree(proc) -> None:
     proc.kill()
 
 
+def _resolve_run_workdir(cfg: dict, state, job: dict, started: datetime, log_path: str) -> str:
+    """v0.2: auto_git_worktree 开启且 workdir 在 git 仓库内 → 建独立 worktree 跑(主目录零污染)。
+    失败(非 git 仓库/git 不可用)回退原 workdir 并记日志。"""
+    if not cfg.get("auto_git_worktree"):
+        return job["workdir"]
+    wd = job["workdir"]
+    try:
+        chk = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=wd,
+                             capture_output=True, text=True, timeout=20, creationflags=CREATE_NO_WINDOW)
+        if chk.returncode != 0 or "true" not in (chk.stdout or ""):
+            _write_log(log_path, "", f"[worktree] {wd} 非 git 仓库,回退原目录运行", None, 0.0)
+            return wd
+        ts = started.strftime("%Y%m%d-%H%M%S")
+        wt = os.path.join(state.root, "worktrees", f"{job['name']}-{ts}")
+        os.makedirs(os.path.dirname(wt), exist_ok=True)
+        mk = subprocess.run(["git", "worktree", "add", "--detach", wt, "HEAD"], cwd=wd,
+                            capture_output=True, text=True, timeout=60, creationflags=CREATE_NO_WINDOW)
+        if mk.returncode != 0:
+            _write_log(log_path, "", f"[worktree] 建 worktree 失败,回退原目录: {mk.stderr}", None, 0.0)
+            return wd
+        _write_log(log_path, "", f"[worktree] 隔离执行于 {wt}(run 后由用户 git worktree remove 清理)", None, 0.0)
+        return wt
+    except Exception as e:
+        _write_log(log_path, "", f"[worktree] 异常回退原目录: {e!r}", None, 0.0)
+        return wd
+
+
 def run_job(cfg: dict, state, job: dict, trigger: str = "manual", prev_output: str = "",
             session_source: str | None = None) -> RunResult:
     """跑一个任务(阻塞)。失败不抛出: 以 status 表达,并照常通知与落盘。
@@ -84,17 +111,18 @@ def run_job(cfg: dict, state, job: dict, trigger: str = "manual", prev_output: s
     env.update(adapter.env(job, agent_cfg))
     # 任意 agent 可在 tasks.yaml agents.<name>.env 追加环境变量(认证材料等由用户自带)
     env.update({str(k): str(v) for k, v in (agent_cfg.get("env") or {}).items()})
-    os.makedirs(job["workdir"], exist_ok=True)
+    run_wd = _resolve_run_workdir(cfg, state, job, started, log_path)
+    os.makedirs(run_wd, exist_ok=True)
 
     timed_out = False
     rc: int | None
     out = err = ""
     with open(log_path, "w", encoding="utf-8") as log:
         log.write(f"# job={job['name']} agent={job['agent']} mode={job['mode']} trigger={trigger}\n")
-        log.write(f"# start={started.isoformat(timespec='seconds')} cwd={job['workdir']}\n")
+        log.write(f"# start={started.isoformat(timespec='seconds')} cwd={run_wd}\n")
         log.write(f"# argv={argv!r}\n# ---------- prompt(渲染后) ----------\n{prompt}\n# ====================================\n")
         try:
-            proc = subprocess.Popen(argv, cwd=job["workdir"],
+            proc = subprocess.Popen(argv, cwd=run_wd,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     text=True, encoding="utf-8", errors="replace",
                                     env=env, creationflags=CREATE_NO_WINDOW)

@@ -20,7 +20,7 @@ def _load(config_path: str):
         cfg = load_config(config_path)
     except ConfigError as e:
         raise SystemExit(_print_and_code(f"配置不合法: {e}", 2))
-    state = StateStore(os.path.join(cfg["base"], "state"))
+    state = StateStore(cfg.get("state_dir") or os.path.join(cfg["base"], "state"))
     return cfg, state
 
 

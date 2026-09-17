@@ -1,7 +1,8 @@
-"""tasks.yaml 加载与 fail-fast 校验(主方案 §7 安全模型、§8 配置约束;flag 依据 plans/001)。"""
+"""tasks.yaml 加载与 fail-fast 校验(主方案 §7 安全模型、§8 配置约束;flag 依据 plans/001、003)。"""
 from __future__ import annotations
 
 import os
+from datetime import datetime
 
 import yaml
 from croniter import croniter
@@ -18,6 +19,8 @@ VALID_TRIGGERS = {"cron", "once_at", "after", "manual"}
 VALID_NOTIFY = {"log", "toast", "webhook"}
 TEMPLATE_KEYS = {"prev.output"}
 PREV_MAX = 4000  # {{prev.output}} 截断长度(主方案 §5)
+ONCE_AT_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M",
+                   "%Y-%m-%d %H:%M:%S.%f")
 
 
 def _norm(p: str, base: str) -> str:
@@ -57,6 +60,19 @@ def _job_prompt_text(j: dict, base: str) -> str:
     p = _norm(str(j["prompt_file"]), base)
     with open(p, encoding="utf-8") as f:
         return f.read()
+
+
+def _parse_once_at(value, job_name: str) -> str:
+    """解析 once_at 时刻 → ISO 字符串。非法或已过去仍允许(过去=立即在启动对账时补跑)。"""
+    if isinstance(value, datetime):
+        return value.isoformat(timespec="seconds")
+    s = str(value).strip()
+    for fmt in ONCE_AT_FORMATS:
+        try:
+            return datetime.strptime(s, fmt).isoformat(timespec="seconds")
+        except ValueError:
+            continue
+    raise ConfigError(f"job {job_name}: once_at 时刻无法解析 '{s}',支持 'YYYY-MM-DD HH:MM[:SS]' 或 ISO")
 
 
 def _validate_job(j: dict, cfg: dict, base: str, adapters: dict, names: set) -> dict:
@@ -127,20 +143,32 @@ def _validate_job(j: dict, cfg: dict, base: str, adapters: dict, names: set) -> 
     if unknown:
         raise ConfigError(f"job {name}: schedule 未知字段 {unknown}")
     kind = kinds[0] if kinds else "manual"
-    cron_expr = after = None
+    cron_expr = after = once_at = None
     if kind == "cron":
         cron_expr = str(sched["cron"])
         if not croniter.is_valid(cron_expr):
             raise ConfigError(f"job {name}: cron 表达式非法: {cron_expr}")
     elif kind == "once_at":
-        raise ConfigError(f"job {name}: once_at 是 v0.2 功能(主方案 §11),v0.1 不可用")
+        # v0.2: 一次性定时。接受 "YYYY-MM-DD HH:MM[:SS]" / ISO;必须是合法时刻
+        once_at = _parse_once_at(sched["once_at"], name)
     elif kind == "after":
         after = str(sched["after"])
         if after == name:
             raise ConfigError(f"job {name}: after 不能指向自身")
         if str(sched.get("on", "success")) not in {"success", "always"}:
             raise ConfigError(f"job {name}: schedule.on 只能是 success/always")
-    out["schedule"] = {"kind": kind, "cron": cron_expr, "after": after, "on": str(sched.get("on", "success"))}
+    out["schedule"] = {"kind": kind, "cron": cron_expr, "after": after, "once_at": once_at,
+                       "on": str(sched.get("on", "success"))}
+
+    # v0.2: 失败重试(默认不重试)
+    retry = j.get("retry") or {}
+    if not isinstance(retry, dict):
+        raise ConfigError(f"job {name}: retry 必须是映射(max/backoff_minutes)")
+    retry_max = int(retry.get("max", 0))
+    retry_bo = float(retry.get("backoff_minutes", 5))
+    if retry_max < 0 or retry_bo < 0:
+        raise ConfigError(f"job {name}: retry.max/backoff_minutes 不能为负")
+    out["retry"] = {"max": retry_max, "backoff_minutes": retry_bo}
 
     used = _check_templates(name, _job_prompt_text(j, base))
     if "prev.output" in used and kind != "after":
@@ -170,8 +198,10 @@ def load_config(path: str) -> dict:
     if not roots or not isinstance(roots, list):
         raise ConfigError("safety.allow_roots 必填(强制隔离目录,主方案 §7)")
     cfg["allow_roots"] = [_norm(str(r), base) for r in roots]
-    if bool(safety.get("auto_git_worktree", False)):
-        raise ConfigError("auto_git_worktree 是 v0.2 功能(主方案 §11),v0.1 不可用")
+    # v0.2 放开: auto_git_worktree(自动为 git 仓库任务开 worktree)
+    cfg["auto_git_worktree"] = bool(safety.get("auto_git_worktree", False))
+    # v0.2: 状态目录可覆盖(默认 <config目录>/state)
+    cfg["state_dir"] = _norm(str(safety.get("state_dir", "state")), base)
 
     raw_jobs = raw.get("jobs")
     if not raw_jobs or not isinstance(raw_jobs, list):

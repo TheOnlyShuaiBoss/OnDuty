@@ -134,15 +134,30 @@ schedule: { cron: "*/30 9-18 * * 1-5" } # 工作日 9-18 点每 30 分
 ```
 - step1 **成功**（退出码 0）后立刻串行触发 step2，并把 step1 最终输出注入 step2 的 `{{prev.output}}`。
 - `on: always` 表示失败也接力（用于"失败了就发修复指令"场景）。
-- 多条链可并行存在；v0.1 执行是**全局串行**（同时只跑一个任务），链深度环检测在配置层完成。
+- 多条链可并行存在；链深度环检测在配置层完成。**并发（v0.2）**：同一 workdir 串行、不同 workdir 并行（见下文"按目录并行"）。
 
 ### manual（手动）
 - 不写 `schedule` 即手动。
 - `onduty run <job>` 写控制文件，daemon 下个 tick 拾取；`--inline` 则当前进程直接跑。
 - `onduty once <job>` 永远可用（不依赖 daemon），适合调试。
 
-### once_at（v0.2，当前拒绝加载）
-一次性时刻触发，规划中；现在写会报"once_at 是 v0.2 功能"。
+### once_at（一次性定时，v0.2）
+```yaml
+schedule: { once_at: "2026-09-18 21:30" }   # 或 ISO;到点跑一次并归档,不重复
+```
+- 格式支持 `YYYY-MM-DD HH:MM[:SS]` / ISO 8601；非法时刻配置校验拒绝。
+- 到点时刻已过：daemon 启动对账时立即补跑一次（一次性语义），随后 `once_fired` 归档不再触发。
+
+## 失败重试（v0.2）
+
+```yaml
+retry: { max: 2, backoff_minutes: 5 }   # 失败/超时后重试 2 次,间隔 5 分钟;不写则不重试
+```
+- 失败（含超时、异常）才会重试；重试不带 after 链（防连锁重试）；成功后清零计数；`runs.jsonl` 里 `trigger: "retry"` 可溯。
+
+## 按目录并行（v0.2）
+
+v0.1 是全局串行；v0.2 起**同一 workdir 严格串行，不同 workdir 并行**。同名 job 在飞中再来触发会被跳过（防重入），守护进程退出时工作线程随 daemon 线程回收。
 
 ## 6. 上下文传递：{{prev.output}} 与 mode: continue
 

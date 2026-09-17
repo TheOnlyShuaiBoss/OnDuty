@@ -60,7 +60,9 @@ onduty status / list / run <job> / logs <job> -n 30
 - **cron** — standard 5-field expression, local timezone. `catchup: true` runs one missed occurrence after a daemon restart.
 - **after** — dependent job fires immediately when the target succeeds (`on: success`, default) or regardless (`on: always`); the target's final text is available as `{{prev.output}}`. Cycles are rejected at load.
 - **manual** — no `schedule`, or `onduty run <job>` (marker file picked up on next tick; `--inline` bypasses the daemon).
-- **once_at** — planned for v0.2; rejected by config now.
+- **once_at** — one-shot wall-clock trigger (`once_at: "2026-09-18 21:30"`), fires once and archives. v0.2.
+- **retries (v0.2)** — `retry: {max: 2, backoff_minutes: 5}` requeues failed/timeout jobs; success clears the counter.
+- **parallelism (v0.2)** — strict serial per workdir, parallel across different workdirs; same-name in-flight jobs are de-duplicated.
 
 ## 5. Context passing
 
