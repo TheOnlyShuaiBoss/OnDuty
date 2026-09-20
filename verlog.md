@@ -157,3 +157,21 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - 用户既有资产可复用: `llm_proxy` 已具备 `apiKeyFileJson`/`extraHeaders`/`streamOnlyUpstream`/**`freeWindows` + `onlyInWindow`**/Anthropic 入口,与 workbuddy 反代同构(v17 已验收)
 - 官方额度规则: **周末全天按 off-peak 计费**;峰值=周一至周五 14:00–18:00(UTC+8);GLM-5.3 off-peak 1×/peak 3×,Flash 0.4×/1.2×([官方公告](https://docs.z.ai/devpack/notice/usage-revision))
 - **下一步(待用户拍板)**: ①是否允许改 `llm_proxy`(跨项目);②验证码走 A1 自研还是 A2 旁挂 zcode2api;③是否接受 Node + jsdom 依赖
+
+### 第1项 · 探针实测结果(2026-09-20 10:12~10:22; 用户批准 A1+先探针; 探针落 llm_proxy/test/zcode_probe/)
+- 用户拍板: 改 `llm_proxy` 新增 `zcode` 平台 + **A1 自研验证码求解**(参考 zcode2api 思路) + **先做可行性探针**
+- 探针四项实测:
+
+  | 环节 | 结果 |
+  |---|---|
+  | 读明文 JWT | ✅ `~/.zcode/v2/config.json` → `provider["builtin:zai-start-plan"].options.apiKey` |
+  | 拉验证码配置 | ✅ `GET /api/v1/client/configs?app_version=3.10.2` → `{sceneId:11xygtvd, region:cn, prefix:no8xfe}` |
+  | **本机自产验证码** | ✅ **2.2~2.7s / 280 字符**(happy-dom 免浏览器求解; 偶发失败需重试) |
+  | 鉴权形式 | `x-api-key` → 401; **`Authorization: Bearer <jwt>` → 通过鉴权** |
+  | 套餐只读端点 | ✅ **200**: `zcode-v3-start-plan-0817`「ZCode Start Plan」**active**, GLM-5.3 每日 3,000,000 token |
+  | **对话端点** | ❌ **405 `{"code":3012,...unusual activity}`**(流式/非流式、darwin/win32 指纹均同) |
+
+- ⚠️ **关键判定(用户实测)**: **官方桌面端自己也报 3012**(`provider=builtin:zai-start-plan provider_code=3012 status=405 retryable=false`; 昨天周六尚可用; 周末包额度完好 GLM-5.3 3000 万 / Flash 5000 万)→ **3012 属账号/IP 级风控, 与外部请求构造无关**; 探针最终落到与官方客户端相同状态
+- 教训与协议(已写入探针 README): 本日客户端版本churn(3.12.3→回退 3.11.2)+多次登录+CLI 多次尝试+**探针使用随机 X-Device-Mid/伪装 darwin 指纹**, 同 token 下多身份冲突正是风控"unusual activity"特征 → 后续必须遵守**最小足迹协议**: ①一套稳定身份(win32-x64 + 固定 device_mid) ②每次只发 1 个请求、间隔 ≥30 分钟、失败即停 ③外部验证前先确认官方客户端可用 ④求解器不并发不预热
+- 动作: 已停止一切自动化请求(官方政策: 3 次以上违规可能封号); 安排**冷却后单次重试**(后台任务, 45 分钟后 1 个请求)
+- 退路(若长期 3012): 仅旁挂 zcode2api / 改走 app-server 桥接 / 用 P1 已验收的 bigmodel 直连通道(llm_proxy 既有 `freeWindows`)
