@@ -136,3 +136,24 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 1. 调研并实现"DSH 复用 ZCode 免费额度"的桥接方案(先方案后实施)
 2. zai 通道恢复后的 zc_check 复验(收尾 plans/004 夜间窗验收项)
 3. ZCode 版本锁定约束(已完成: 写入 Rules.md)
+
+### 第2项 · zai 通道复验结果(2026-09-20 10:03~10:10,三通道实测)
+- Z.AI 登录确认: 凭据新增 `oauth:zai:access_token` / `oauth:zai:user_info` / `oauth:login_attribution`;桌面配置里 `builtin:zai-coding-plan`、`builtin:zai-start-plan` 已带 apiKey
+- 依次用项目脚本 `sync-zcode-cli-config.ps1 -ProviderKey <通道>` 切换 CLI 配置并跑 `once zc_check`:
+
+  | 通道 | 上游 | 结果 |
+  |---|---|---|
+  | `builtin:zai-coding-plan` | api.z.ai/api/anthropic | **1113** 余额/资源包不足(HTTP 429) |
+  | `builtin:zai-start-plan` | zcode.z.ai/api/v1/zcode-plan/anthropic | **3007** captcha verify failed |
+  | (前一轮)`builtin:bigmodel-coding-plan` | open.bigmodel.cn/api/anthropic | **1113** |
+
+- **结论**: 明文 key 三条通道**全部吃不到免费额度**,与用户澄清一致(额度绑定 ZCode 自身加密凭据);`zc_check` 验收需走桥接方案(第1项),不以 CLI 直连闭环
+- 管道侧依旧健康: 配置生成 → 启动 → 联网全通(7.5~13s 达网关),失败均为上游账务/风控回应
+
+### 第1项 · 侦察结论(技术路径已定位,方案见 plans/006)
+- **关键发现**: Coding Plan **JWT 是明文可用**的(`~/.zcode/v2/config.json` → `provider["builtin:zai-start-plan"].options.apiKey`,255 字符 3 段 JWT,iat=本日 09:57、无 exp,桌面端启动即刷新);真正卡点是计划网关要求 **阿里云无痕验证参数**(请求头 `X-Aliyun-Captcha-Verify-Param`),我们实测的 3007 即此
+- 现成思路(网络调研): [zcode2api](https://github.com/dengyie/zcode2api)(JWT + Node/jsdom 免浏览器过码 → Anthropic `/v1/messages` 网关)、[workbuddy2api](https://github.com/dddmiku/workbuddy2api)、[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
+- 桌面端驱动运行时的方式(进程实测): `ZCode.exe "…\zcode.cjs" app-server --stdio --surface desktop`(私有 stdio 协议,含 `off-peak-run` 消息)
+- 用户既有资产可复用: `llm_proxy` 已具备 `apiKeyFileJson`/`extraHeaders`/`streamOnlyUpstream`/**`freeWindows` + `onlyInWindow`**/Anthropic 入口,与 workbuddy 反代同构(v17 已验收)
+- 官方额度规则: **周末全天按 off-peak 计费**;峰值=周一至周五 14:00–18:00(UTC+8);GLM-5.3 off-peak 1×/peak 3×,Flash 0.4×/1.2×([官方公告](https://docs.z.ai/devpack/notice/usage-revision))
+- **下一步(待用户拍板)**: ①是否允许改 `llm_proxy`(跨项目);②验证码走 A1 自研还是 A2 旁挂 zcode2api;③是否接受 Node + jsdom 依赖
