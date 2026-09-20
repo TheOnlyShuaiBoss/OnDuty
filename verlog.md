@@ -232,3 +232,16 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - 官方对照(桌面端日志): 真浏览器(Electron webContents)跑阿里云 SDK(`captcha-open.aliyuncs.com`) + `zcode-agent.respondProviderRuntimeHeaders OK` → **happy-dom 求解的环境指纹不被接受, 必须真浏览器**
 - 本机 Chrome/Edge 均在位(Playwright 未装)
 - **B1 剩余: 只差"真浏览器解验证码回填 requestAuth.headers"一环**; 其余 9 环全通
+
+### 第1项 · 真浏览器出码 + 3007 机制定位(2026-09-20 深夜二)
+
+用户批准用**本地 Chrome** 解验证码, 结果与关键反转:
+
+- **真浏览器求解器成功**(`solver_browser.mjs`, puppeteer-core + 本机 Chrome): **有头模式出码 280 字符且含 `securityToken`**(happy-dom 版无真 token 故必然被拒); 无头模式取不到参数(风控识别)
+- 官方 SDK 调用方式(反查 solver.js): `AliyunCaptchaConfig={region,prefix}` + `initAliyunCaptcha({...,getInstance:inst=>inst.startTracelessVerification(),success:r=>r.verifyParam})`; SDK = `o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js`(**新版,非老版 AWSC**)
+- **⚠️ 机制反转(3.14.0 代码实证)**: 找到 3007 判定函数 `createZcodePlanCaptchaError`:
+  `if (providerKind!=="openai-compatible" || !captcha) return; if (readCaptchaVerifyParam(headers)) throw 3007`
+  → **`x-aliyun-captcha-verify-param` 不是通行证而是挑战信号**: 运行时见该头即判 3007; 官方正解是宿主用 `reason:"model-request"|"captcha-retry"` 向**服务端换取运行时头**, 而非外部塞阿里云验证码
+- 凭证通道对照: `zcodejwttoken`(255) 过认证→captcha 失败; `oauth:zai:access_token`(1404) → Unauthorized/provider_not_configured; `account-provider api-key`(49) → 同前(单测时 1113)
+- **结论**: B1 九环已通, 第十环需**服务端签发的运行时头**; 本地自产验证码此路不通
+- 剩余可选: ①hook 官方 Electron 进程间通信抓 `respondProviderRuntimeHeaders` 回包(难度高) ②改走 C 旁挂 zcode2api(它已解决同一问题) ③B2 只当 agent 调度
