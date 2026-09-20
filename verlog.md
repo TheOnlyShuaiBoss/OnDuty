@@ -210,3 +210,25 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - **剩余卡点**: `turn-failed` 发生在发起网络请求**之前**, 缺的是"账号/凭据绑定"——桌面端由宿主完成(`本地 provider registry 已同步到 ZCode agent` + `官方 MCP 身份头已解析`); 我们注入的 `~/.zcode/v2/provider_config.json` 是空壳, 真实账号在加密 `credentials.json` + 宿主 `provider/updateAccountConfig` 流程
 - 下一步候选: ①试 `provider/updateAccountConfig`; ②用真实 `~/.zcode` 作存储根(不隔离)看能否自动关联账号; ③试 `account:zai-offpeak-idle-plan`
 - 附: 客户端已被升到 **3.14.0.7681**(运行时 0.16.9), 用户拍板保持此版; Rules.md 版本条目已相应修订
+
+### 第1项 · B1 全链路打通(2026-09-20 深夜; 仅剩验证码一环)
+
+在 `llm_proxy/test/zcode_probe/`(用户已批准改 llm_proxy 且先探针)把官方 app-server 链路完整复刻, 十环里九环实测通过:
+
+| 环 | 结论 |
+|---|---|
+| ① 启动 | ��入 `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE`+`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` ✅ |
+| ② 存储握手 | 应答 `startup/storagePath`→`storagePathReady`; DB 迁移到 `ready` ✅ |
+| ③ 协议信封 | **3.14.0 无 `jsonrpc` 字段**: `{id,method,params}`/`{id,result,error}` ✅ |
+| ④ 参数结构 | `session/create{workspace:{workspacePath,workspaceKey}}`; 须应答 `session/requestRuntimePreferences{nativeSearchEnhancementsEnabled:bool}` ✅ |
+| ⑤ **凭据解密可复刻** | 密钥 = `sha256("zcode-credential-fallback:"+platform+":"+homedir+":"+username)`(aes-256-gcm); 同机实测 **6/6 全解**(oauth:zai:access_token 1404字符/zcodejwttoken 255字符/account-provider api-key 49字符) ✅ |
+| ⑥ 账号供给 | `provider/updateAccountConfig{schemaVersion,revision,basedOnZCodeBuiltinRevision,providers,states}`; **revision 必须是内部全串** `zcode-builtin:30:2ad7363a…`; provider access 只接受 `{type:"zhipu-account",entitled}` ✅ |
+| ⑦ 模型选择 | `modelSelection.options.reasoningLevel` **必填**; 合法值实测 **`low`/`high`**(disabled/minimal/medium/none 全拒) ✅ |
+| ⑧ 宿主应答运行时头 | 回 `{headersApplied:true, requestAuth:{apiKey, headers}}` ✅ |
+| ⑨ **请求发出** | `model.request.status=model_request_start…`——官方运行时真的发出上游请求, **3012 不再出现** ✅ |
+| ⑩ **验证码** | 上游回 `captcha verify failed` ⚠️ |
+
+- ⑩ 判定: api-key 通道过验证但 **1113 无额度**; JWT 通道 + happy-dom 自产码 → **captcha verify failed**
+- 官方对照(桌面端日志): 真浏览器(Electron webContents)跑阿里云 SDK(`captcha-open.aliyuncs.com`) + `zcode-agent.respondProviderRuntimeHeaders OK` → **happy-dom 求解的环境指纹不被接受, 必须真浏览器**
+- 本机 Chrome/Edge 均在位(Playwright 未装)
+- **B1 剩余: 只差"真浏览器解验证码回填 requestAuth.headers"一环**; 其余 9 环全通
