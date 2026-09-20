@@ -244,4 +244,19 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
   → **`x-aliyun-captcha-verify-param` 不是通行证而是挑战信号**: 运行时见该头即判 3007; 官方正解是宿主用 `reason:"model-request"|"captcha-retry"` 向**服务端换取运行时头**, 而非外部塞阿里云验证码
 - 凭证通道对照: `zcodejwttoken`(255) 过认证→captcha 失败; `oauth:zai:access_token`(1404) → Unauthorized/provider_not_configured; `account-provider api-key`(49) → 同前(单测时 1113)
 - **结论**: B1 九环已通, 第十环需**服务端签发的运行时头**; 本地自产验证码此路不通
-- 剩余可选: ①hook 官方 Electron 进程间通信抓 `respondProviderRuntimeHeaders` 回包(难度高) ②改走 C 旁挂 zcode2api(它已解决同一问题) ③B2 只当 agent 调度
+- 剩余可选: ①hook 官方 Electron 进程间通信抓 `respondProviderRuntimeHeaders` 回包(难���高) ②改走 C 旁挂 zcode2api(它已解决同一问题) ③B2 只当 agent 调度
+- **用户拍板(2026-09-20 深夜)**: 先按 **②旁挂 zcode2api** 试; 若不行再试点 **①hook 官方 Electron**。llm_proxy 侧方案见其 `plans/2026-09-20-ZCode套餐反代接入.md`
+
+### 第1项 · 路线② 旁挂 zcode2api 实施(2026-09-20 21:0x~21:3x)
+
+- **部署完成**(全部隔离在 `llm_proxy/test/zcode_probe/zcode2api/`, 已 gitignore; 端口 3010 避��生产 6446):
+  Python3.13 venv + 依赖 ✅ / captcha_node happy-dom ✅ / `.env`(随机 admin+gateway key、host=127.0.0.1) ✅ / JWT 入池(模式 jwt) ✅ / 网关启动、`/v1/models` 200(GLM-5.3-Flash、GLM-5.3) ✅
+- **修掉上游项目的 3 个 Windows 兼容 bug**(`app/hostinfo.py`; 原逻辑把真机档案判非法→退化成伪装 macOS→身份不一致→上游 405):
+  1. `os_version=platform.release()` → Windows 返回 `"11"`, 过不了 `_RELEASE_SHAPE`(要求 `x.y[.z]`) → 改取 `platform.version()` 归一化为 `10.0.26200`
+  2. `_resolve_language()` 只读 `$LANG` → Windows 恒退 `en-US` → 改用 `locale.getdefaultlocale()` ��� `zh-CN`
+  3. `_resolve_timezone()` 只读 `/etc/localtime` → Windows 恒退 `UTC` → 改按 UTC 偏移映射 IANA 得 `Asia/Shanghai`
+  修正后档案 `win32/x64/10.0.26200/zh-CN/Asia/Shanghai` 校验通过、入池无告警
+- **额度查询完全正常**: `GLM-5.3: 3,000,000/3,000,000`(满额)、`GLM-5.3-Flash: 4,893,734/5,000,000` → **认证与账号都没问题**
+- **当前卡点**: 对话端点 `/v1/messages` → **HTTP 405 风控**(账号被自动禁用) —— 与 B1 探针今晚结论一致: 属**账号级对话端点风控**, 且今晚被反复试探(B1 多轮 model_request_start + 探针多轮)持续触发
+- **动作**: 已停网关(3010 释放)、无 python/chrome 残留, **进入冷却期(零请求)**; 冷却起点 21:32
+- **后续候选**: ①冷却≥30~60min 后单次复测 ②若仍 405 → 试点 hook 官方 Electron ③zcode2api 的 `oauth` 模式(`cli.py login zai`)换凭证口径再试
