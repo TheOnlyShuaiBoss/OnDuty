@@ -35,3 +35,10 @@
 2. zcode `login`(Z.AI OAuth)成功;CLI 配置可被 login 覆写为 zai 通道;`sync-zcode-cli-config.ps1` 增加"无 enabled 时兜底选带 apiKey 的 provider"逻辑 ✅
 3. zcode 通道额度现状: zai 通道报 `1113`(Z.AI 侧 Coding Plan 免费额度窗口 **23:00–次日 09:00**,白天无额度);bigmodel 通道报 `1309`(GLM Coding Plan 套餐到期)→ **管道全通,仅额度时效**;v0.1 验收按"认证+调用链通、报错如实回传"计为通过
 4. 附加修正: 脚本必须带 BOM(PS5.1 解析陷阱,与 JSON 无 BOM 规则方向相反,已写入 Rules.md)
+
+## 5. 2026-09-20 更正(客户端版本与凭据事实)
+
+- **版本锁定**: 客户端现固定 **3.11.2.6792**(3.12.3 升级实测不可用: 打包缺 `resources\glm\provider\zcode-builtin.json`,CLI 启动即死;且升级会重建 `~\.zcode` 并清掉 `cli\config.json`) → 已写入 Rules.md 约束,暂不升级
+- **§2 凭据结论部分失效**: 新版 ZCode 用的不是用户 key,而是**绑定 ZCode 的加密凭据**;`sync-zcode-cli-config.ps1` 同步出的 apiKey 只能让外部 CLI 发出请求,**无法享受夜间包/周末包**(2026-09-20 实测 1113)
+- **免费额度范围**(用户澄清): 夜间包(23:00–09:00)/周末包**仅 Z.AI 登录账号**享有(bigmodel 登录无);用户已用 Z.AI 重新登录
+- **后续方向**: 让 DSH 复用该免费额度 → 参考"DSH 反代 WorkBuddy"的既有成功方案(待立项,见 verlog 2026-09-20 条目)

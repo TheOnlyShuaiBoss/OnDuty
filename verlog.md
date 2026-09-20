@@ -89,3 +89,50 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - **DSH"继续进行中任务"实测通过**: `once dsh_a`(写 ANSWER=42,85s)→ after 自动接力 `dsh_b`(读 a.md 确认、写 CONFIRMED,93s);a.md/b.md 均落盘正确 ✅。说明: DSH headless 无会话续接,接力用 `{{prev.output}}` 文本注入 + 文件载体,符合主方案设计
 - 用例沉淀: tasks.yaml 内 dsh_a/dsh_b 保留为"DSH 继续进行中任务"的常驻示例(不入库)
 - ⚠️ **依赖提示**: 本机 dsh 适配 `command` 指向源码 checkout 的 tsx/bin.ts/tsconfig 绝对路径(plans/001 §1)。**DSH 本体升级/移动目录后**,这些路径若失效,headless 会起不来——届时把 tasks.yaml 里 agents.dsh.command 改成新路径即可,无需改 onduty 代码
+
+## 2026-09-19 ~ 09-20 · plans/005 修复执行(用户批准;修复1 完成、修复2 管道修复待额度、修复3 仅立项)
+
+### 背景
+用户重装 DSH(旧 checkout 0.1.1-rc.2 → 新 `D:\DSH\deepseek-harness-0.1.6-alpha.1`),要求通读方案/记录后诊断修复;方案存 plans/005,用户"开始执行修复方案"。
+
+### 修复1(tasks.yaml DSH 路径)✅ 完成并真机验收
+- `tasks.yaml` `agents.dsh.command` 三处路径 `D:\DSH\deepseek-harness\` → `D:\DSH\deepseek-harness-0.1.6-alpha.1\`(仅此三行,其余未动)
+- `onduty check`: 8 job 全过,4 个 dsh job 预览 argv 显示新路径
+- 真机冒烟 `onduty once dsh_a`: dsh_a success(41.9s, final=`42`) → after 接力 dsh_b success(33.7s, final=`CONFIRMED`);`sandbox/dshchain/a.md`=ANSWER=42、`b.md`=CONFIRMED;runs.jsonl 两条 success ✅
+- 旁证: 新版 headless 明显更快(旧 85s/93s → 新 42s/34s);`--profile headless` 机制经 0.1.6-alpha.1 源码核实未变;**headless 仍无 resume**(args.ts: `--resume` 仅 tui)→ `{{prev.output}}` 接力设计依然正确
+
+### 修复2(zcode 夜间窗)⚠️ 管道已修复,验收仍卡账务侧(未闭环)
+- 09-19 05:03 `once zc_check` **0.8s 启动即失败**: `无法定位 CLI ZCode Built-in Provider Config`
+- 根因链(全部实测):
+  1. 当时 ZCode 客户端为 **3.12.3.7463**(cjs 2026-09-16 23:14 / 11.4MB),新版打包**未随附 `resources\glm\provider\zcode-builtin.json`**,而新内核启动即要求该文件(查找位: ①cjs 同级 `provider\`;②向上 5 级 `D:\config\provider\`)
+  2. 源码挖出逃生口(混淆名反解): `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE` / `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` / `ZCODE_BUILTIN_PROVIDER_BUNDLED_CONFIG_FILE`;前两者同时设置即走快速路径、**完全跳过文件查找** —— 注入实验实测启动错误消失(3.12.3 专用知识,回退后不再需要但留档)
+  3. 09-19~09-20 间 ZCode 侧整体变动: `~\.zcode` 于 09-19 08:10 重建、客户端**回退到 3.11.2.6792**(cjs 12.6MB / 9-04 构建) → 3.12.3 新体系问题随之消失;唯一卡点变为 **`~\.zcode\cli\config.json` 丢失**
+  4. 按 MANUAL §12 既有流程跑项目脚本 `scripts/sync-zcode-cli-config.ps1`: 从桌面 `~\.zcode\v2\config.json` 取 `builtin:bigmodel-coding-plan`(带 apiKey)生成 CLI 配置(provider=onduty, model=GLM-5.3/Flash, **无 BOM** 校验通过)
+- 修复后 `once zc_check`: 启动正常、**7.5s 到达网关**,返回 `ProviderBusinessError: [1113][余额不足或无可用资源包,请充值。]`(HTTP 429, providerId=onduty, baseURL=open.bigmodel.cn)
+- 账务侧现状(较 plans/003 §4.3 已变): 桌面配置里 **zai 系 provider 全部 apiKey=False(未登录)**,凭据仅 `oauth:bigmodel:*`;bigmodel 通道报 1113 → 验收需用户侧二选一: ①`zcode login`(Z.AI)恢复 zai 通道,在 23:00–09:00 窗口内重跑;②为 bigmodel 套餐充值/续订
+- 结论: **onduty/zcode 管道侧已无问题**(配置生成+启动+联网全通),剩余为账号额度,属用户侧一次性动作
+
+### 修复3(config 环境变量展开)📝 仅立项
+- 已记 plans/005 §3(v0.3 立项草案: `%VAR%` 展开 + junction 备选),本次未动代码(符合用户约定)
+
+### 未做/待办
+- zcode 夜间窗验收闭环: 待用户恢复额度/zai 登录后夜间重跑一次,回填 plans/004 验收表
+- (v0.3) config 环境变量展开立项
+
+## 2026-09-20 · 用户侧结论修正 + 新方向(DSH 复用 ZCode 夜间/周末包;客户端版本锁定)
+
+### 用户澄清的关键事实(修正上一条目里的账务侧判断)
+- ZCode **升级到 3.12.x 后即不可用**(打包缺 provider 文件),且用户侧 key 也失效——**新版不再使用用户 key**
+- **夜间包(23:00–09:00)/周末包仅 Z.AI 登录的账号享有**(bigmodel 登录没有);额度**绑定 ZCode 自身的加密凭据,只在 ZCode 客户端/运行时里可用** → 从桌面 provider 同步 apiKey 给外部 CLI 只能"发得出请求",**吃不到免费额度**(同步 key 实测 1113)
+- 用户**已用 Z.AI 重新登录**(当前周末、额度满);客户端**已回退并锁定 3.11.2.6792,暂不升级** → 已沉淀为 Rules.md 约束
+- 结论修正: 上一条目"需 bigmodel 充值"的判断作废;正解是 **Z.AI 登录 + 经 ZCode 运行时使用免费额度**
+
+### 新方向(待立项): 让 DSH 复用 ZCode 夜间/周末包
+- 目标: DSH(deepseek-harness) 侧用上 ZCode 的夜间/周末免费额度
+- 参考: 用户已成功实现的 **"DSH 反代 WorkBuddy"** 方案(复用其架构思路)
+- 路径: 调研(本机既有反代实现 + GitHub/网络思路) → 起草方案(plans/006) → 获批后实施
+
+### 本轮待办(用户指定顺序)
+1. 调研并实现"DSH 复用 ZCode 免费额度"的桥接方案(先方案后实施)
+2. zai 通道恢复后的 zc_check 复验(收尾 plans/004 夜间窗验收项)
+3. ZCode 版本锁定约束(已完成: 写入 Rules.md)
