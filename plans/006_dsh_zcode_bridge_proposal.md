@@ -44,6 +44,24 @@
 2. 验证码走 **A1 自研**（贴合架构、无第三方）还是 **A2 旁挂 zcode2api**（最快见效）
 3. 是否接受新增依赖（Node + jsdom，仅 A1 需要）
 
-## 3. 合规提示
+## 4. 探针执行结果（2026-09-20 10:12~10:22，已实测）
+
+探针落在 `llm_proxy/test/zcode_probe/`（其规则要求隔离验证入 `test/<场景名>/`），明细见该目录 `README.md`。
+
+| 环节 | 结果 |
+|---|---|
+| 读明文 JWT | ✅ `~/.zcode/v2/config.json` → `provider["builtin:zai-start-plan"].options.apiKey` |
+| 拉验证码配置 | ✅ `GET /api/v1/client/configs?app_version=3.10.2` → sceneId/region/prefix |
+| **本地求解验证码** | ✅ **2.2~2.7s / 280 字符**（happy-dom 无浏览器求解；偶发失败需重试） |
+| 鉴权形式 | `x-api-key` → 401；**`Authorization: Bearer <jwt>` → 通过鉴权** |
+| 套餐只读端点 | ✅ `GET /api/v1/zcode-plan/billing/balance` → **200**：`zcode-v3-start-plan-0817`「ZCode Start Plan」**active**，GLM-5.3 **每日 3,000,000 token** |
+| **对话端点** | ❌ **405 `{"code":3012,...unusual activity}`**（流式/非流式、darwin/win32 指纹均同） |
+
+**判断**：账号未整体风控（billing 200 + 桌面端日志 `hasActiveStartPlan:true`），3012 是 messages 端点专属风控。候选原因：验证码参数与 HTTP 指纹不匹配／缺宿主侧 provider registry 身份链／短时间多次尝试触发临时限制。
+
+**下一步（待拍板）**：①请用户在 ZCode 桌面端发一条消息确认 app 当前可用（用于区分"请求特征问题"与"账号冷却"）；②冷却 30 分钟后单次重试；③仍不通则退路：仅旁挂 zcode2api 或改走 app-server 桥接。
+
+## 5. 合规提示
 - 免浏览器求解无痕验证 = 绕过客户端风控，仅限本人账号自用；平台条款风险请用户自行判断（zcode2api 亦声明同款免责）
 - 令牌来源为用户本机 `~/.zcode` 明文 JWT（桌面端自动刷新）；**不得入库、不得外传**，测试脚本按 llm_proxy 规则从文件读、不写死
+- 探针中的 `solver.js` 为第三方 AGPL-3.0 代码，**生产实现须自研**
