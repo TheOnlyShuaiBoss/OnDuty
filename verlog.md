@@ -275,3 +275,36 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - **与 B1 结论互相印证**: 昨天从 3.14.0 源码挖到的 `createClientSigningFetch` + 握手(nonce/sig/ts + privateCipher) + 宿主 `respondProviderRuntimeHeaders`, 正是这套**客户端签名**链路 → 两条路线撞同一面墙
 - **路线判定**: ②旁挂 zcode2api ❌ 不可行(未实现必需签名); ① hook 官方 Electron ⏳ 唯一可能闭环(官方客户端自己会签名); B1 自研复刻签名(Ed25519+PoW)路径明确但偏大; B2 只当 agent 调度 ✅ 兜底
 - **动作**: 网关已停(3010 释放, 无残留), 保持零请求; 明细见 llm_proxy `plans/2026-09-20-ZCode套餐反代接入.md`
+
+### 第1项 · 签名判定修正 + **官方 renderer 出码突破** + 账号再入风控(2026-09-21 06:3x~06:5x)
+
+**一、签名判定修正(重要, 推翻上一条的"缺签名"结论)**
+- 从运行时源码提取签名需求判定函数 `vEs`:
+  `if (type==="zhipu-account" && (mode==="start-plan"||mode==="off-peak")) return false;` ← **start-plan 不需要签名**
+  `if (type==="zhipu-coding-plan-api-key" || mode==="individual-/team-coding-plan" || QYe(baseURL)!==null) return true;`
+  白名单域名仅 `api.chatglm.site`/`zcode.chatglm.site`
+- 运行时日志 `model.client_signing.unsigned_sent / skipped by provider access mode` 与此一致
+- → **405 真凶回到"验证码"**, 与签名无关; 上一条对 zcode2api 的"缺签名"判定同步修正
+
+**二、官方宿主出码机制完整还原(asar 反混淆)**
+- `Ntn(cfg)`: 仅 `access.type==="zhipu-account" && mode==="start-plan"` 才走验证码
+- `Stn({captchaVerifyParam,captchaRegion})`: 产出的头**就是** `X-Aliyun-Captcha-Verify-Param/Region` 两个
+- `Jtn→Gtn`: 拉 captcha 配置 → `ytn` 真浏览器跑无痕 → `Stn` 组装 → 返回 `{captchaVerifyParam, headers}`
+- `htn`: **官方 `initAliyunCaptcha` 关键参数**: `language` 必须 **`cn`/`en`**(非 `zh-CN`), `mode:"popup"`, `element/button` 必须挂到 DOM, `getInstance:inst=>inst.startTracelessVerification()`
+- 运行时侧: `vEs` 判定签名 → `respondProviderRuntimeHeaders` 合并验证码对 → `{headersApplied:true, requestAuth:{apiKey, headers}}`
+
+**三、🎯 突破: 在官方 renderer 内出码(`cdp_mint.mjs`)**
+- 方法: CDP 挂官方 renderer, 用**官方自己的浏览器环境/SDK**出码(而非外部 Chrome 模拟)
+- 实测: **0.8 秒出码 280 字符**(外部 Chrome 需 2.2~2.7s), language 用官方值 `cn`, 环境指纹与官方 100% 一致
+- 接入 B1 后(`b1_final.mjs`): 运行时接受并发出请求, **`captcha verify failed` 消失** ✅ —— 出码问题已解决
+
+**四、⚠️ 现场变化: 账号又入风控窗口**
+- 同刻用户在**官方客户端**发消息也报 3012: `provider=account:zai-start-plan provider_code=3012 status=405 retryable=false`
+- → 本次 3012 **不能归因于我们的出码方式**(官方同刻亦被拦); 属账号级风控窗口(今日多轮验证触发)
+- 处置: 已停所有探针(无残留)、网关已停、**客户端已恢复正常启动**(关闭 9222 调试端口)、保持零请求
+
+**五、结论与后续**
+1. **出码问题已解决**(官方 renderer 出码 0.8s/参数正确/环境一致), B1 链路可发出**被上游接受验证码**的请求
+2. 唯一阻塞 = 账号级 3012 风控窗口 → 等自然恢复(**以官方客户端能否正常对话为准**)
+3. 恢复后用 `b1_final.mjs` 单次复测; 通过后再封装为 llm_proxy 的 `zcode` provider(常驻桥接)
+4. 兜底仍可选 B2(onduty 直接调度 zcode 跑任务)
