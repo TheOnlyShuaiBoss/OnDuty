@@ -260,3 +260,18 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - **当前卡点**: 对话端点 `/v1/messages` → **HTTP 405 风控**(账号被自动禁用) —— 与 B1 探针今晚结论一致: 属**账号级对话端点风控**, 且今晚被反复试探(B1 多轮 model_request_start + 探针多轮)持续触发
 - **动作**: 已停网关(3010 释放)、无 python/chrome 残留, **进入冷却期(零请求)**; 冷却起点 21:32
 - **后续候选**: ①冷却≥30~60min 后单次复测 ②若仍 405 → 试点 hook 官方 Electron ③zcode2api 的 `oauth` 模式(`cli.py login zai`)换凭证口径再试
+
+### 第1项 · 路线② 隔夜复测 → **根因定案: 缺客户端签名 V4**(2026-09-21 06:14)
+
+- 环境: 客户端正常(10 进程)、**夜间免费窗内(23:00–09:00)**、JWT 重新解密入池、账号 `active`、隔夜冷却约 9 小时
+- **单次复测仍 405**: `/v1/messages` → 503 → 日志 `命中风控 HTTP 405，已禁用`
+- **同时刻额度接口满额**: `GLM-5.3: 3,000,000/3,000,000`、`GLM-5.3-Flash: 5,000,000/5,000,000` → **认证/账号/额度全无问题, 只有对话端点被拦; 且非冷却问题, 是稳定拦截**
+- **根因(该项目 `docs/development/05-upstream-protocols.md` §7 自述 + 代码核对)**:
+  | 风控机制 | 说明 | zcode2api 实现 |
+  |---|---|---|
+  | endpoint routing | `GET agent/configs` → `proxyEndpoint.mapping`, 客户端定期重写上游 URL(coding-plan → `zcode.z.ai/api/v1/ultra[-zai]/…`) | ❌ 0 命中 |
+  | **client signing V4** | `codingPlanSignature.enable=true` 时先握手 `{provider}/api/paas/c1f3a7e2/v2/client`, 之后**每请求附 Ed25519 签名 + PoW 头**; **start-plan / off-peak 永不免签** | ❌ 0 命中(`ed25519`/`signing`/`agent/configs` 全无) |
+  → 本账号即 **Start Plan**, **永不免签**; 故对话端点必然 405
+- **与 B1 结论互相印证**: 昨天从 3.14.0 源码挖到的 `createClientSigningFetch` + 握手(nonce/sig/ts + privateCipher) + 宿主 `respondProviderRuntimeHeaders`, 正是这套**客户端签名**链路 → 两条路线撞同一面墙
+- **路线判定**: ②旁挂 zcode2api ❌ 不可行(未实现必需签名); ① hook 官方 Electron ⏳ 唯一可能闭环(官方客户端自己会签名); B1 自研复刻签名(Ed25519+PoW)路径明确但偏大; B2 只当 agent 调度 ✅ 兜底
+- **动作**: 网关已停(3010 释放, 无残留), 保持零请求; 明细见 llm_proxy `plans/2026-09-20-ZCode套餐反代接入.md`
