@@ -175,3 +175,38 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 - 教训与协议(已写入探针 README): 本日客户端版本churn(3.12.3→回退 3.11.2)+多次登录+CLI 多次尝试+**探针使用随机 X-Device-Mid/伪装 darwin 指纹**, 同 token 下多身份冲突正是风控"unusual activity"特征 → 后续必须遵守**最小足迹协议**: ①一套稳定身份(win32-x64 + 固定 device_mid) ②每次只发 1 个请求、间隔 ≥30 分钟、失败即停 ③外部验证前先确认官方客户端可用 ④求解器不并发不预热
 - 动作: 已停止一切自动化请求(官方政策: 3 次以上违规可能封号); 安排**冷却后单次重试**(后台任务, 45 分钟后 1 个请求)
 - 退路(若长期 3012): 仅旁挂 zcode2api / 改走 app-server 桥接 / 用 P1 已验收的 bigmodel 直连通道(llm_proxy 既有 `freeWindows`)
+
+### 第1项 · 晚复测 + 根因定位(2026-09-20 19:38; 用户重启后官方端恢复)
+
+- 现场: 用户重启、官方端 17:05 正常(日志有成功 `model.request.completed`)、额度正常; 19:38 外部**单次**复测(1 请求/稳定 win32 身份/未连发) → **仍 405 `{"code":3012}`**
+- **结论修正**: 上午"账号/IP 级风控"判定据此更新 —— 3012 并非单纯冷却问题, 而是**外部客户端缺少官方宿主链路**的稳定结果(官方端已恢复而外部仍被拦)
+- **根因(3.11.2 运行时代码实证)**: 运行时每次模型请求前向宿主发起 `interactionRequestProviderRuntimeHeaders` 交互
+  (`bHo.refreshBeforeModelRequest()` 恒返回 `true`), 宿主须回 `{headersApplied:true, requestAuth:{apiKey?, headers?}}`
+  —— 即**由官方 Electron 宿主向服务端换取一组"provider 运行时头"再附加到模型请求**; 桌面端日志实证
+  `[captcha-diagnostics] requestId="…:provider-runtime-headers:…" {"event":"request.respond","headersApplied":true}`
+  → 外部 HTTP 直连**无法靠"自拼头 + 自产验证码"复刻该链路**
+- 路线修正(方案见探针 README, 待用户拍板): **B1** app-server 桥接(桥接器当宿主, 请求由官方运行时发出) / **B2** 只当 agent 调度(onduty 已有 zcode 适配器) / **C** 旁挂 zcode2api / **D** 直连 bigmodel 免费窗(llm_proxy 既有能力)
+- 探针成本盘点(迄今): 验证码自产 ✅ 2.2~2.7s、鉴权���式 ✅ Bearer、套餐/额度只读 ✅ 200、对话端点 ❌ 3012 —— 前三项对 B1/C 路线仍有价值
+
+### 第1项 · D 路线实测作废 + B1 协议层打通(2026-09-20 晚)
+
+**D 路线(直连 bigmodel 免费窗)实测 ❌ 作废**
+- 经本机 llm_proxy(`127.0.0.1:6446`,`bigmodel` 平台 + `freeWindows={days:[0,6],hours:[[23,6]]}`)实测 `bigmodel/glm-5.3-flash`
+- 结果: **HTTP 429 `{"error":{"message":"余额不足或无可用资源包,请充值。","type":"rate_limit_error"}}`**
+- 结论: 免费额度已从 API 通道整体收回, 只保留在 ZCode 客户端内部(与用户最初判断一致)
+
+**B1(app-server 桥接)协议层打通 —— 六步全部实测(探针 `llm_proxy/test/zcode_probe/probe_b1_*.mjs`)**
+
+| 步骤 | 关键结论 |
+|---|---|
+| ① 启动 | 注入 `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE`+`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 后, `zcode.cjs app-server --stdio --surface desktop` 可脱离桌面端启动 ✅ |
+| ② 存储握手 | 应答 `startup/storagePath` → `startup/storagePathReady`; 运行时 `startup/storageState` 走到 `phase:"ready"`(含 DB 迁移) ✅ |
+| ③ **协议信封** | **3.14.0 无 JSON-RPC 信封**: 请求 `{id,method,params}`、响应 `{id,result/error}`(zod 实证 `unrecognized_keys:["jsonrpc"]`) ✅ |
+| ④ 参数结构 | `session/create` 需 `workspace:{workspacePath,workspaceKey}`; 宿主须应答 `session/requestRuntimePreferences`(必填 `nativeSearchEnhancementsEnabled:boolean`) ✅ |
+| ⑤ 会话建立 | `session/create` 成功返回 `protocol: ZCode Protocol v1` + sessionId + projection ✅ |
+| ⑥ 模型请求 | `session/send{sessionId, content, modelSelection}` 被 `accepted:true`, 但回合**秒失败 turn-failed** 且**未触发** `requestProviderRuntimeHeaders` ⚠️ |
+
+- providerId 必须用注册表真实 id: **`account:zai-start-plan`**(非 `builtin:zai-start-plan`); 注册表 8 个 provider 全为 `account:` 前缀(zai/bigmodel × individual/team/start + 两个 `-offpeak-idle-plan` 夜间通道)
+- **剩余卡点**: `turn-failed` 发生在发起网络请求**之前**, 缺的是"账号/凭据绑定"——桌面端由宿主完成(`本地 provider registry 已同步到 ZCode agent` + `官方 MCP 身份头已解析`); 我们注入的 `~/.zcode/v2/provider_config.json` 是空壳, 真实账号在加密 `credentials.json` + 宿主 `provider/updateAccountConfig` 流程
+- 下一步候选: ①试 `provider/updateAccountConfig`; ②用真实 `~/.zcode` 作存储根(不隔离)看能否自动关联账号; ③试 `account:zai-offpeak-idle-plan`
+- 附: 客户端已被升到 **3.14.0.7681**(运行时 0.16.9), 用户拍板保持此版; Rules.md 版本条目已相应修订
