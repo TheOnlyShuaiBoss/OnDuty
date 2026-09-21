@@ -1,5 +1,32 @@
 # verlog.md — agent_daemon 改动与验收记录
 
+## 2026-09-21 晚 · 第1项收尾: ZCode 桥接**已可用**(结论与定位, 详见 llm_proxy)
+
+第1项(让 DSH 用上 ZCode 夜间/周末免费额度)已通过 **B1 桥接**落地并端到端验收通过。
+**本项目的结论性记录**(实现与验收细节在 llm_proxy, 见其 `verlog.md` / `plans/2026-09-21-ZCode桥接常驻化方案.md` / `ISSUES.md` Z1~Z5):
+
+### 结果
+- DSH 里已能选到 `zcode/GLM-5.3-Flash`、`zcode/GLM-5.3`, 走 ZCode 套餐额度(实测 usage 15283/3/15286)
+- 桥接链路: 宿主协议 + **官方 renderer 内出码**(~1s, len=280) + 官方运行时发请求
+- 真实链路验收: 非流式与流式各一次 200; 触发 agent 循环的用例跑满 4 轮/26~39s 并返回最终答案
+
+### ⚠️ 三条必须记住的结论
+1. **定位是"带内置工具的 agent 桥接", 不是"纯净模型反代"**
+   `session/send` 的 schema 只有 `toolDenylist`、**无传入工具入口** → DSH 的工具无法下发给模型;
+   模型只用 ZCode 自带工具(WebSearch/Bash/…)并由运行时自行执行 → DSH 收不到 `tool_calls`。
+   **适合问答/调研; 不适合"读项目文件/改代码"类任务**(那需要 DSH 的工具)。
+2. **`workspace/generateText`(唯一有 tools 的通道)稳定被 3012 拦** — 已单发实证:
+   同账号同时段 `session/send` 通、`generateText` 被拦(出码成功、请求确已发出)。
+   → "传 DSH 工具"的路线**作废**, 不要再试。
+3. **运维前提**: ZCode 客户端须以**调试端口**运行(双击 `llm_proxy\test\zcode_probe\start_zcode_debug.bat`);
+   桥接随 `llm_proxy\start.bat` 拉起; `zcode` 平台已设 `skipDailyCheck`(否则每日自检会逐个真打上游)。
+
+### 关于本项目(onduty)的后续
+- 原"兜底方案 B2"(onduty 直接调度 zcode 跑任务)**仍可作为独立方向**:
+  它不受上述工具限制影响(走 CLI 调度而非模型反代), 若日后需要"让 zcode 读写项目文件",
+  应走 B2 而非桥接。**未实施**, 待用户拍板。
+- v0.3 讨论仍挂起(用户先前决定)。
+
 ## 2026-09-16 · v0.1 MVP(按 plans/000 §13 五步全做)
 
 ### 范围
@@ -308,3 +335,45 @@ v0.1 四类触发(manual/cron/after 均真机验证;once_at 属 v0.2 校验层�
 2. 唯一阻塞 = 账号级 3012 风控窗口 → 等自然恢复(**以官方客户端能否正常对话为准**)
 3. 恢复后用 `b1_final.mjs` 单次复测; 通过后再封装为 llm_proxy 的 `zcode` provider(常驻桥接)
 4. 兜底仍可选 B2(onduty 直接调度 zcode 跑任务)
+
+### 第1项 · 🎉 **B1 闭环打通**(2026-09-21 13:05 单发复测成功)
+
+**触发条件**: 官方客户端 12:51:37 有一次完整成功链路(验证码 success → `respondProviderRuntimeHeaders OK (3.3ms)`),
+当日日志 `3012` 计数归零 → 判定风控窗口已过, 按最小足迹协议做**唯一一次**单发复测。
+
+**实测结果**(`node b1_final.mjs --live`): **十环全通**
+
+| 环节 | 证据 | 结果 |
+|---|---|---|
+| 账号供给 | `providerCount:3, status:"received"` | ✅ |
+| 会话建立 | `sess_af7541f4-83bb-4723-9ff3-38855d011585` | ✅ |
+| 运行时索要头 | `requestProviderRuntimeHeaders`(model-request) ×2 | ✅ |
+| 官方 renderer 出码 | `len=280` ×2 | ✅ |
+| **上游接受** | **`hasError:false`**, 无 `captcha verify failed`、无 3012 | ✅ |
+| **模型回复** | 响应正文 **`"text":"OK"`** | ✅ |
+| 套餐计费 | in 16049 / out 3 / total 16052, 上游 `glm-5.3-flash` | ✅ |
+
+- 主请求 9758ms, `finishReason:stop`; 上游 `x-log-id=202609211305111ff5d136d7cb445e`
+- 9/20 起遗留的两个卡点(`captcha verify failed`、`3012`)**双双消失**
+- 证据文件: `~/.zcode/cli/rollout/model-io-sess_af7541f4-83bb-4723-9ff3-38855d011585.jsonl`
+
+**⚠️ 附带发现: 副请求被拦(现象已确认, 根因尚未定论)**
+- 同会话内, 主请求成功后 1 秒内运行时自动发的**标题生成**请求被拦 3012(305 字节, `session-type: other`)
+- **假设一("1 秒内连发")—— 已推翻**: 官方 `sess_fe00c1fe` 主→副间隔 **65ms 却成功**,
+  探针 `sess_af7541f4` 间隔 **103ms 被拦**; **官方比探针还快 38ms** → 间隔不是原因
+- **假设二(版本头 `0.16.9` vs `3.14.0`)—— 待验证, 证据尚不充分**:
+  探针标题请求 `user-agent=ZCode/0.16.9`/`x-zcode-app-version=0.16.9`,
+  官方成功请求为 `ZCode/3.14.0`/`3.14.0`(`0.16.9`=运行时自己的版本, `3.14.0`=客户端外壳版本)
+  - **⚠️ 为何只算待验证**: 探针的**主请求用的也是 0.16.9 却成功了** →
+    单一"版本头"解释不了"同为 0.16.9, 一大一小结果相反";
+    更可能是**请求形态(是否极简)+ 版本标识**的组合判据, **必须实验证伪**
+- **代码实证(开关存在)**: `zcode.cjs` L15231 `function Sqa(e,t){ return Lie(e[hpe] ?? t.appVersion) }`
+  (`hpe === "ZCODE_APP_VERSION"`) → 版本头可由**环境变量**注入, 成本极低
+
+**生产化铁律**(写给后续 llm_proxy `zcode` provider): ① 设 `ZCODE_APP_VERSION=3.14.0`
+(低成本看齐 + 待验证实验变量); ② 抑制标题生成等副请求作为减少暴露面的稳健措施保留;
+③ 出码必须走官方 renderer(CDP); ④ 复测单发、失败即停;
+⑤ 待验证: 注入该变量后极简副请求是否不再被拦, 若仍被拦则判据在别处(再查 `x-device-mid`/请求体形态)
+
+**收尾**: 客户端已恢复正常启动(9222 关闭)、探针零残留、llm_proxy 生产文件未改动;
+明细见 llm_proxy `plans/2026-09-20-ZCode套餐反代接入.md` 与 `test/zcode_probe/README.md`
